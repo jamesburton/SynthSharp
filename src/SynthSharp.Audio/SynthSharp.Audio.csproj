@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SynthSharp.Core\SynthSharp.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>true</IsPackable>
+    <PackageId>SynthSharp.Audio</PackageId>
+    <Description>Synthesis and rendering components for SynthSharp.</Description>
+    <Authors>SynthSharp</Authors>
+    <PackageTags>synth;audio;waveform</PackageTags>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SynthSharp.Core\SynthSharp.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>true</IsPackable>
+    <PackageId>SynthSharp.Input</PackageId>
+    <Description>Keyboard input contracts and routing components for SynthSharp.</Description>
+    <Authors>SynthSharp</Authors>
+    <PackageTags>input;keyboard;maui</PackageTags>
+  </PropertyGroup>
+
+</Project>

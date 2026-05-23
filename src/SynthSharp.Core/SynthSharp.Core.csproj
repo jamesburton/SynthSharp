@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>true</IsPackable>
+    <PackageId>SynthSharp.Core</PackageId>
+    <Description>Core contracts and domain models for SynthSharp.</Description>
+    <Authors>SynthSharp</Authors>
+    <PackageTags>synth;audio;maui</PackageTags>
+  </PropertyGroup>
+
+</Project>

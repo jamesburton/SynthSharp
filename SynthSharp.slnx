@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SynthSharp.App/SynthSharp.App.csproj" />
+    <Project Path="src/SynthSharp.Audio/SynthSharp.Audio.csproj" />
+    <Project Path="src/SynthSharp.Core/SynthSharp.Core.csproj" />
+    <Project Path="src/SynthSharp.Input/SynthSharp.Input.csproj" />
+    <Project Path="src/SynthSharp.Tool/SynthSharp.Tool.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SynthSharp.Audio.Tests/SynthSharp.Audio.Tests.csproj" />
+    <Project Path="tests/SynthSharp.Core.Tests/SynthSharp.Core.Tests.csproj" />
+  </Folder>
+</Solution>

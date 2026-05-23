@@ -1,0 +1,42 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="SynthSharp.App.MainPage"
+             Title="SynthSharp MVP">
+    <ScrollView>
+        <VerticalStackLayout Padding="20,16" Spacing="12">
+            <Label Text="SynthSharp MVP"
+                   Style="{StaticResource Headline}" />
+            <Label Text="4-row keyboard layout (number row included), fully reconfigurable."
+                   Style="{StaticResource SubHeadline}" />
+
+            <Border StrokeThickness="1" Padding="12">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Pad editor" FontAttributes="Bold" />
+                    <Picker x:Name="PadPicker"
+                            Title="Select pad"
+                            SelectedIndexChanged="OnPadSelectionChanged" />
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                        <Label Grid.Row="0" Text="Label" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="0" Grid.Column="1" x:Name="LabelEntry" Placeholder="Kick / Lead A1 / etc." />
+                        <Label Grid.Row="1" Text="Key" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="1" Grid.Column="1" x:Name="KeyBindingEntry" Placeholder="A, 1, Space, ..." />
+                        <Label Grid.Row="2" Text="Pitch" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="2" Grid.Column="1" x:Name="PitchEntry" Placeholder="C4 or 440" />
+                        <Label Grid.Row="3" Text="Wave" VerticalTextAlignment="Center" />
+                        <Picker Grid.Row="3" Grid.Column="1" x:Name="WaveformPicker" />
+                    </Grid>
+                    <HorizontalStackLayout Spacing="8">
+                        <Button Text="Apply to pad" Clicked="OnApplyPadClicked" />
+                        <Button Text="Play selected" Clicked="OnPlaySelectedClicked" />
+                        <Button Text="Save preset" Clicked="OnSavePresetClicked" />
+                        <Button Text="Load preset" Clicked="OnLoadPresetClicked" />
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+            </Border>
+
+            <Label x:Name="StatusLabel" TextColor="{AppThemeBinding Light=Black, Dark=White}" />
+            <VerticalStackLayout x:Name="PadRowsLayout" Spacing="8" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

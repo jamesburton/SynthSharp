@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore SynthSharp.slnx
+
+      - name: Test core
+        run: dotnet test tests/SynthSharp.Core.Tests/SynthSharp.Core.Tests.csproj --configuration Release --no-restore
+
+      - name: Test audio
+        run: dotnet test tests/SynthSharp.Audio.Tests/SynthSharp.Audio.Tests.csproj --configuration Release --no-restore
+
+  build-windows-app:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui-windows
+
+      - name: Restore
+        run: dotnet restore SynthSharp.slnx
+
+      - name: Build Windows MAUI app
+        run: dotnet build src/SynthSharp.App/SynthSharp.App.csproj -c Release -f net10.0-windows10.0.19041.0 --no-restore

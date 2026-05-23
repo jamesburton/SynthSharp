@@ -1,0 +1,207 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without v prefix (example: 0.1.0)"
+        required: true
+        default: "0.1.0"
+      publish_nuget:
+        description: "Publish packages to NuGet"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.vars.outputs.version }}
+      tag: ${{ steps.vars.outputs.tag }}
+      publish_nuget: ${{ steps.vars.outputs.publish_nuget }}
+    steps:
+      - name: Resolve release variables
+        id: vars
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ inputs.version }}"
+            $tag = "v$version"
+            $publishNuget = "${{ inputs.publish_nuget }}"
+          } else {
+            $tag = "${{ github.ref_name }}"
+            $version = $tag.TrimStart('v')
+            $publishNuget = "true"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "publish_nuget=$publishNuget" >> $env:GITHUB_OUTPUT
+
+  test:
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore SynthSharp.slnx
+
+      - name: Test core
+        run: dotnet test tests/SynthSharp.Core.Tests/SynthSharp.Core.Tests.csproj --configuration Release --no-restore
+
+      - name: Test audio
+        run: dotnet test tests/SynthSharp.Audio.Tests/SynthSharp.Audio.Tests.csproj --configuration Release --no-restore
+
+  package-nuget:
+    runs-on: ubuntu-latest
+    needs: [prepare, test]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore SynthSharp.slnx
+
+      - name: Pack NuGet packages
+        run: |
+          mkdir -p artifacts/nuget
+          dotnet pack src/SynthSharp.Core/SynthSharp.Core.csproj -c Release --no-restore -o artifacts/nuget /p:PackageVersion=${{ needs.prepare.outputs.version }}
+          dotnet pack src/SynthSharp.Audio/SynthSharp.Audio.csproj -c Release --no-restore -o artifacts/nuget /p:PackageVersion=${{ needs.prepare.outputs.version }}
+          dotnet pack src/SynthSharp.Input/SynthSharp.Input.csproj -c Release --no-restore -o artifacts/nuget /p:PackageVersion=${{ needs.prepare.outputs.version }}
+          dotnet pack src/SynthSharp.Tool/SynthSharp.Tool.csproj -c Release --no-restore -o artifacts/nuget /p:PackageVersion=${{ needs.prepare.outputs.version }}
+
+      - name: Upload NuGet artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: artifacts/nuget/*
+
+  publish-nuget:
+    runs-on: ubuntu-latest
+    needs: [prepare, package-nuget]
+    if: needs.prepare.outputs.publish_nuget == 'true' && secrets.NUGET_API_KEY != ''
+    steps:
+      - name: Download NuGet artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-packages
+          path: artifacts/nuget
+
+      - name: Publish to NuGet
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          dotnet nuget push "artifacts/nuget/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+  publish-tool-binaries:
+    runs-on: ${{ matrix.os }}
+    needs: [prepare, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-latest
+            rid: osx-x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore SynthSharp.slnx
+
+      - name: Publish tool binary
+        run: dotnet publish src/SynthSharp.Tool/SynthSharp.Tool.csproj -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -o artifacts/tool/${{ matrix.rid }}
+
+      - name: Archive tool binary (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: Compress-Archive -Path "artifacts/tool/${{ matrix.rid }}/*" -DestinationPath "artifacts/tool/SynthSharp.Tool-${{ needs.prepare.outputs.version }}-${{ matrix.rid }}.zip"
+
+      - name: Archive tool binary (non-Windows)
+        if: matrix.os != 'windows-latest'
+        run: tar -czf artifacts/tool/SynthSharp.Tool-${{ needs.prepare.outputs.version }}-${{ matrix.rid }}.tar.gz -C artifacts/tool/${{ matrix.rid }} .
+
+      - name: Upload tool artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-${{ matrix.rid }}
+          path: artifacts/tool/SynthSharp.Tool-${{ needs.prepare.outputs.version }}-${{ matrix.rid }}*
+
+  publish-maui-windows:
+    runs-on: windows-latest
+    needs: [prepare, test]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui-windows
+
+      - name: Restore
+        run: dotnet restore SynthSharp.slnx
+
+      - name: Publish MAUI Windows app
+        run: dotnet publish src/SynthSharp.App/SynthSharp.App.csproj -c Release -f net10.0-windows10.0.19041.0 -p:WindowsPackageType=None -o artifacts/app/windows
+
+      - name: Archive MAUI app
+        shell: pwsh
+        run: Compress-Archive -Path "artifacts/app/windows/*" -DestinationPath "artifacts/app/SynthSharp.App-${{ needs.prepare.outputs.version }}-windows.zip"
+
+      - name: Upload MAUI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: maui-windows
+          path: artifacts/app/SynthSharp.App-${{ needs.prepare.outputs.version }}-windows.zip
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [prepare, test, package-nuget, publish-tool-binaries, publish-maui-windows]
+    if: always() && needs.test.result == 'success'
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: SynthSharp ${{ needs.prepare.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist/**/*.zip
+            dist/**/*.tar.gz
+            dist/**/*.nupkg
