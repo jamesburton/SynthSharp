@@ -256,6 +256,55 @@ public sealed class SynthAudioEngineTests
     }
 
     [Fact]
+    public void NoteOff_OnUnregisteredVoiceId_IsNoOp()
+    {
+        var backend = new FakeAudioPlaybackBackend();
+        var engine = new SynthAudioEngine(backend, maxPolyphony: 1);
+
+        // No NoteOn has been called — NoteOff on an unknown voice must not throw
+        // and must not invoke the backend.
+        engine.NoteOff("never-registered");
+
+        Assert.Empty(backend.Invocations);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task NoteOnAsync_WithMissingVoiceId_ThrowsArgumentException(string? voiceId)
+    {
+        var backend = new FakeAudioPlaybackBackend();
+        var engine = new SynthAudioEngine(backend, maxPolyphony: 1);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => engine.NoteOnAsync(voiceId!, MakePad()));
+
+        Assert.Empty(backend.Invocations);
+    }
+
+    [Fact]
+    public async Task Polyphony_EvictedVoice_DoesNotPlayReleaseTail()
+    {
+        var backend = new FakeAudioPlaybackBackend();
+        var engine = new SynthAudioEngine(backend, maxPolyphony: 1);
+
+        // Voice with a non-zero release — if NoteOff were called we'd expect a tail.
+        await engine.NoteOnAsync("v1", MakePad(releaseSeconds: 0.10));
+
+        // Eviction via a second NoteOn should NOT play a release tail —
+        // voice stealing is a hard cut, not a graceful release.
+        await engine.NoteOnAsync("v2", MakePad(releaseSeconds: 0.10));
+
+        await Task.Delay(50);
+
+        // Two PlayAsync calls total (v1 sustain + v2 sustain). No third for a release tail.
+        Assert.Equal(2, backend.Invocations.Count);
+        Assert.True(backend.Invocations[0].WasCancelled);
+        Assert.False(backend.Invocations[1].WasCancelled);
+    }
+
+    [Fact]
     public async Task PlayPadAsync_StillWorksEndToEnd()
     {
         var backend = new FakeAudioPlaybackBackend();

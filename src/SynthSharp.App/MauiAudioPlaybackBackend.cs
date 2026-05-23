@@ -19,9 +19,20 @@ public sealed class MauiAudioPlaybackBackend : IAudioPlaybackBackend
         try
         {
             player.Play();
-            while (player.IsPlaying && !cancellationToken.IsCancellationRequested)
+
+            // Poll until the audio finishes or cancellation is requested.
+            // We catch OperationCanceledException locally so the cancellation path
+            // is explicit at this layer rather than relying on an upstream catch.
+            try
             {
-                await Task.Delay(10, cancellationToken);
+                while (player.IsPlaying && !cancellationToken.IsCancellationRequested)
+                {
+                    await Task.Delay(10, cancellationToken);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancellation requested mid-delay; fall through to stop the player.
             }
         }
         finally
