@@ -7,6 +7,10 @@ public sealed partial class KeyboardInputSource
 #if WINDOWS
     private Microsoft.UI.Xaml.FrameworkElement? _keyboardElement;
     private readonly HashSet<string> _heldKeys = new(StringComparer.OrdinalIgnoreCase);
+    private Microsoft.Maui.Controls.Window? _appWindow;
+    private EventHandler? _activatedHandler;
+    private Microsoft.UI.Xaml.Input.KeyEventHandler? _keyDownHandler;
+    private Microsoft.UI.Xaml.Input.KeyEventHandler? _keyUpHandler;
 #endif
 
     partial void AttachPlatformHooks()
@@ -15,15 +19,32 @@ public sealed partial class KeyboardInputSource
         MainThread.BeginInvokeOnMainThread(() =>
         {
             var appWindow = Application.Current?.Windows.FirstOrDefault();
-            if (appWindow?.Handler?.PlatformView is not MauiWinUIWindow nativeWindow
-                || nativeWindow.Content is not Microsoft.UI.Xaml.FrameworkElement keyboardElement)
+            if (appWindow is null)
             {
                 return;
             }
 
-            _keyboardElement = keyboardElement;
-            _keyboardElement.KeyDown += OnNativeWindowKeyDown;
-            _keyboardElement.KeyUp += OnNativeWindowKeyUp;
+            _appWindow = appWindow;
+
+            // If the native handler is already wired up, attach immediately. Otherwise
+            // wait for Window.Activated, which fires after the WinUI handler is ready
+            // and after the MAUI page's OnAppearing — this is the most reliable
+            // attachment point. Subscribing to Activated unconditionally would race
+            // if the window has already been activated by the time Start() runs.
+            if (TryAttachKeyboardHandlers(appWindow))
+            {
+                return;
+            }
+
+            _activatedHandler = (_, _) =>
+            {
+                if (TryAttachKeyboardHandlers(appWindow) && _appWindow is not null && _activatedHandler is not null)
+                {
+                    _appWindow.Activated -= _activatedHandler;
+                    _activatedHandler = null;
+                }
+            };
+            appWindow.Activated += _activatedHandler;
         });
 #endif
     }
@@ -31,17 +52,72 @@ public sealed partial class KeyboardInputSource
     partial void DetachPlatformHooks()
     {
 #if WINDOWS
+        if (_appWindow is not null && _activatedHandler is not null)
+        {
+            _appWindow.Activated -= _activatedHandler;
+        }
+
+        _activatedHandler = null;
+        _appWindow = null;
+
         if (_keyboardElement is null)
         {
+            _heldKeys.Clear();
             return;
         }
 
-        _keyboardElement.KeyDown -= OnNativeWindowKeyDown;
-        _keyboardElement.KeyUp -= OnNativeWindowKeyUp;
+        // Routed-event handlers added via AddHandler must be removed via RemoveHandler;
+        // -= would do nothing because the delegates were boxed into KeyEventHandler instances.
+        if (_keyDownHandler is not null)
+        {
+            _keyboardElement.RemoveHandler(Microsoft.UI.Xaml.UIElement.KeyDownEvent, _keyDownHandler);
+            _keyDownHandler = null;
+        }
+
+        if (_keyUpHandler is not null)
+        {
+            _keyboardElement.RemoveHandler(Microsoft.UI.Xaml.UIElement.KeyUpEvent, _keyUpHandler);
+            _keyUpHandler = null;
+        }
+
         _keyboardElement = null;
         _heldKeys.Clear();
 #endif
     }
+
+#if WINDOWS
+    private bool TryAttachKeyboardHandlers(Microsoft.Maui.Controls.Window appWindow)
+    {
+        if (_keyboardElement is not null)
+        {
+            return true; // already attached
+        }
+
+        if (appWindow.Handler?.PlatformView is not MauiWinUIWindow nativeWindow
+            || nativeWindow.Content is not Microsoft.UI.Xaml.FrameworkElement keyboardElement)
+        {
+            return false;
+        }
+
+        // Use AddHandler with handledEventsToo: true so we still receive KeyDown / KeyUp
+        // when focused child controls (Buttons, Pickers, Entries) mark the event Handled.
+        // Without this flag, focusing a Picker or Entry would silently swallow our hotkeys.
+        _keyDownHandler = OnNativeWindowKeyDown;
+        _keyUpHandler = OnNativeWindowKeyUp;
+
+        keyboardElement.AddHandler(
+            Microsoft.UI.Xaml.UIElement.KeyDownEvent,
+            _keyDownHandler,
+            handledEventsToo: true);
+        keyboardElement.AddHandler(
+            Microsoft.UI.Xaml.UIElement.KeyUpEvent,
+            _keyUpHandler,
+            handledEventsToo: true);
+
+        _keyboardElement = keyboardElement;
+        return true;
+    }
+#endif
 
 #if WINDOWS
     private void OnNativeWindowKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs args)
