@@ -57,7 +57,11 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore SynthSharp.slnx
+        run: |
+          dotnet restore src/SynthSharp.Core/SynthSharp.Core.csproj
+          dotnet restore src/SynthSharp.Audio/SynthSharp.Audio.csproj
+          dotnet restore tests/SynthSharp.Core.Tests/SynthSharp.Core.Tests.csproj
+          dotnet restore tests/SynthSharp.Audio.Tests/SynthSharp.Audio.Tests.csproj
 
       - name: Test core
         run: dotnet test tests/SynthSharp.Core.Tests/SynthSharp.Core.Tests.csproj --configuration Release --no-restore
@@ -78,7 +82,11 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore SynthSharp.slnx
+        run: |
+          dotnet restore src/SynthSharp.Core/SynthSharp.Core.csproj
+          dotnet restore src/SynthSharp.Audio/SynthSharp.Audio.csproj
+          dotnet restore src/SynthSharp.Input/SynthSharp.Input.csproj
+          dotnet restore src/SynthSharp.Tool/SynthSharp.Tool.csproj
 
       - name: Pack NuGet packages
         run: |
@@ -144,7 +152,7 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore SynthSharp.slnx
+        run: dotnet restore src/SynthSharp.Tool/SynthSharp.Tool.csproj
 
       - name: Publish tool binary
         run: dotnet publish src/SynthSharp.Tool/SynthSharp.Tool.csproj -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -o artifacts/tool/${{ matrix.rid }}
