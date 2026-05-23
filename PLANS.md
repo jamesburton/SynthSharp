@@ -34,28 +34,31 @@
 - NWaves issue #88 (`Pitch.FromYin` `IndexOutOfRangeException` for small windows / low pitches) is unfixed upstream; `NWavesPitchDetector` guards against the failing parameter combination by computing the minimum frame size required for the requested `MinHz` and throwing `ArgumentException` if the options are pathological.
 - Tone-range output is **metadata only** — no actual pitch-shifting yet. Variant generation (resampling or phase-vocoder-based pitch shift) belongs to the Pitch editing and melodic mapping phase.
 - Default YIN search range is 50 Hz – 2 kHz; instruments above C7 (~2093 Hz) need a wider `MaxHz` option to detect cleanly.
+- **Pitch editing and melodic mapping (Phase 4):** `IPitchShifter` in `SynthSharp.Core.Music` and `NWavesPitchShifter` in `SynthSharp.Audio` backed by `NWaves.Effects.PitchShiftEffect` (phase-vocoder TSM, 1024/256 window/hop, duration-preserving). `Pitch.SnapToNearestSemitone` rounds any Hz to the nearest MIDI semitone. `SamplePitchVariant` + `IPitchVariantGenerator` + `DefaultPitchVariantGenerator` produce one variant per semitone across a `SampleToneRange`, including the un-shifted source at offset 0. Variants carry their MIDI number, note name (`Pitch.ToNoteName`), and target frequency (`Pitch.ToFrequencyHz`). 20+ unit tests including pitch-shift round-trip via the YIN detector and variant ordering / cancellation / null-guard coverage.
+
+### Known limitations (Phase 4)
+
+- Pitch-shift algorithm is NWaves' phase-vocoder TSM. Quality is acceptable for sustained instrument samples but can introduce transient smearing on very short percussive hits — choose carefully when pitch-shifting drums.
+- Variant generation is metadata-only — no preset wiring yet. Pads can't yet be auto-assigned from a generated variant set; that integration belongs to the Sample lane evolution phase.
+- `Pitch.SnapToNearestSemitone` is exposed but not yet wired into the MAUI pitch editor UI; an Apply-time snap toggle would naturally live next to the pitch entry.
+- Pitch shifting beyond ±12 semitones is supported by the algorithm but quality degrades quickly outside that window; the variant generator does not warn or refuse extreme offsets.
 
 ## Next planned phases
 
-1. **Pitch editing and melodic mapping**
-   - Add pitch-edit controls (coarse/fine tuning and note snapping).
-   - Allow generating/assigning melodic note variants from imported sounds.
-   - Support varied per-pad melodic assignments from one source sample.
-
-2. **Sample lane evolution**
+1. **Sample lane evolution**
    - Add file-based sample assignment and playback for mixed sample row.
    - Add per-sample gain/trim controls.
    - Introduce MAUI file picker and "Load sample" UI affordance on a pad.
 
-3. **Track editor foundation**
+2. **Track editor foundation**
    - Introduce timeline model and bar/step grid.
    - Record triggered events into pattern clips.
 
-4. **Sound editor**
+3. **Sound editor**
    - Add richer oscillator/envelope controls.
    - Add filter/LFO primitives.
 
-5. **Packaging and distribution hardening**
+4. **Packaging and distribution hardening**
    - Add signing/notarization flows for additional MAUI platform artifacts.
    - Expand release matrices (additional RIDs/architectures).
    - Add smoke tests for `dnx` + global-tool install paths in CI.
