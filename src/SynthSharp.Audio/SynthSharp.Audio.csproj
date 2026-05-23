@@ -1,6 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="NWaves" Version="0.9.6" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\SynthSharp.Core\SynthSharp.Core.csproj" />
   </ItemGroup>
 

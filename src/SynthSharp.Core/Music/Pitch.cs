@@ -87,4 +87,35 @@ public static partial class Pitch
         frequencyHz = ToFrequencyHz(midiNote);
         return true;
     }
+
+    /// <summary>Converts a frequency in Hz to the nearest MIDI note number (0–127).</summary>
+    /// <param name="frequencyHz">Frequency in Hz; must be positive.</param>
+    /// <returns>The nearest MIDI note number, or -1 when <paramref name="frequencyHz"/> is non-positive or out of the MIDI range.</returns>
+    public static int ToMidiNote(double frequencyHz)
+    {
+        if (frequencyHz <= 0)
+        {
+            return -1;
+        }
+
+        var midi = (int)Math.Round(A4Midi + (12d * Math.Log2(frequencyHz / A4Frequency)));
+        return midi is >= 0 and <= 127 ? midi : -1;
+    }
+
+    /// <summary>Converts a MIDI note number to a textual note name using sharps (e.g., 69 → "A4", 61 → "C#4").</summary>
+    /// <param name="midiNote">MIDI note number in [0, 127].</param>
+    /// <returns>The note name with octave suffix.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="midiNote"/> is outside [0, 127].</exception>
+    public static string ToNoteName(int midiNote)
+    {
+        if (midiNote is < 0 or > 127)
+        {
+            throw new ArgumentOutOfRangeException(nameof(midiNote), midiNote, "MIDI note must be in [0, 127].");
+        }
+
+        var names = new[] { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        var octave = (midiNote / 12) - 1; /* MIDI 60 = C4 */
+        var pitchClass = midiNote % 12;
+        return $"{names[pitchClass]}{octave}";
+    }
 }
