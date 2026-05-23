@@ -1,5 +1,6 @@
 using SynthSharp.Core.Audio;
 using SynthSharp.Core.Layout;
+using SynthSharp.Core.Persistence;
 
 namespace SynthSharp.Audio.Tests;
 
@@ -363,5 +364,127 @@ public sealed class SynthAudioEngineTests
     {
         public Task PlayAsync(Stream pcmWaveStream, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("simulated backend failure");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Sample playback tests
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Writes a mono WAV file with <paramref name="frameCount"/> frames of constant <paramref name="amplitude"/>
+    /// into a fresh temp directory. Returns the directory path and file name.
+    /// </summary>
+    private static (string Dir, string FileName) WriteTestSampleWav(
+        int frameCount = 4410,
+        int sampleRate = 44100,
+        double amplitude = 0.5)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "synthsharp-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+
+        var channel = new float[frameCount];
+        for (var i = 0; i < frameCount; i++)
+        {
+            channel[i] = (float)amplitude;
+        }
+
+        var metadata = new SampleMetadata(
+            Name: "test",
+            ChannelCount: 1,
+            SampleRateHz: sampleRate,
+            FrameCount: frameCount,
+            Duration: TimeSpan.FromSeconds((double)frameCount / sampleRate),
+            SourceBitsPerSample: 16,
+            SourcePath: null,
+            ImportedAt: DateTimeOffset.UtcNow);
+        var sample = new Sample(metadata, new[] { channel });
+
+        var fileName = "test.wav";
+        var fullPath = Path.Combine(dir, fileName);
+        using var fs = File.Create(fullPath);
+        new WavSampleExporter().Export(sample, fs);
+
+        return (dir, fileName);
+    }
+
+    [Fact]
+    public async Task NoteOnAsync_PadWithSampleFileName_LoadsAndPlaysSample()
+    {
+        var (dir, fileName) = WriteTestSampleWav();
+        try
+        {
+            var backend = new FakeAudioPlaybackBackend();
+            var engine = new SynthAudioEngine(
+                backend,
+                sampleImporter: new WavSampleImporter(),
+                sampleExporter: new WavSampleExporter(),
+                samplesDirectory: dir);
+
+            var pad = MakePad();
+            pad.SampleFileName = fileName;
+
+            await engine.NoteOnAsync("v1", pad);
+
+            Assert.Single(backend.Invocations);
+            Assert.True(backend.Invocations[0].StreamLength > 0);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task NoteOnAsync_PadWithoutSampleFileName_StillSynthesises()
+    {
+        var backend = new FakeAudioPlaybackBackend();
+        var engine = new SynthAudioEngine(backend, maxPolyphony: 1);
+
+        // SampleFileName is null — should fall through to the synth path.
+        await engine.NoteOnAsync("v1", MakePad());
+
+        Assert.Single(backend.Invocations);
+        Assert.True(backend.Invocations[0].StreamLength > 0);
+    }
+
+    [Fact]
+    public async Task NoteOnAsync_PadWithSampleFileName_NoSampleSupport_Throws()
+    {
+        var backend = new FakeAudioPlaybackBackend();
+
+        // 2-arg constructor — no sample importer/exporter configured.
+        var engine = new SynthAudioEngine(backend, maxPolyphony: 1);
+
+        var pad = MakePad();
+        pad.SampleFileName = "some-sample.wav";
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => engine.NoteOnAsync("v1", pad));
+    }
+
+    [Fact]
+    public async Task NoteOnAsync_PadWithSampleFileName_FileMissing_Throws()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "synthsharp-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var backend = new FakeAudioPlaybackBackend();
+            var engine = new SynthAudioEngine(
+                backend,
+                sampleImporter: new WavSampleImporter(),
+                sampleExporter: new WavSampleExporter(),
+                samplesDirectory: dir);
+
+            var pad = MakePad();
+            pad.SampleFileName = "nonexistent.wav";
+
+            await Assert.ThrowsAsync<FileNotFoundException>(
+                () => engine.NoteOnAsync("v1", pad));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 }

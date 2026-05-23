@@ -1,5 +1,6 @@
 using SynthSharp.Core.Layout;
 using SynthSharp.Core.Audio;
+using SynthSharp.Core.Persistence;
 
 namespace SynthSharp.Audio;
 
@@ -12,15 +13,49 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
     private readonly Dictionary<string, ActiveVoice> _activeVoices = new(StringComparer.OrdinalIgnoreCase);
     private long _voiceSequence;
 
+    private readonly ISampleImporter? _sampleImporter;
+    private readonly ISampleExporter? _sampleExporter;
+    private readonly string? _samplesDirectory;
+
     private static readonly TimeSpan MaxSustainDuration = TimeSpan.FromSeconds(10);
     private const string PreviewVoiceId = "__preview";
 
-    /// <summary>Initializes a new engine with the given backend and polyphony cap.</summary>
+    /// <summary>Initializes a new engine with the given backend and polyphony cap. Sample playback is not available with this constructor.</summary>
     /// <param name="playbackBackend">The audio playback backend used to render PCM streams.</param>
     /// <param name="maxPolyphony">Maximum simultaneous voices; oldest is evicted when the cap is reached.</param>
     public SynthAudioEngine(IAudioPlaybackBackend playbackBackend, int maxPolyphony = 1)
+        : this(playbackBackend, sampleImporter: null, sampleExporter: null, samplesDirectory: null, maxPolyphony: maxPolyphony)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new engine with the given backend, sample support, and polyphony cap.
+    /// </summary>
+    /// <param name="playbackBackend">The audio playback backend used to render PCM streams.</param>
+    /// <param name="sampleImporter">
+    /// Importer used to decode WAV files from disk. When null, pads that reference a
+    /// <see cref="PadAssignment.SampleFileName"/> will throw <see cref="InvalidOperationException"/> at play time.
+    /// </param>
+    /// <param name="sampleExporter">
+    /// Exporter used to re-encode gain+envelope-shaped sample data as PCM16. When null, pads that reference a
+    /// <see cref="PadAssignment.SampleFileName"/> will throw <see cref="InvalidOperationException"/> at play time.
+    /// </param>
+    /// <param name="samplesDirectory">
+    /// Directory from which <see cref="PadAssignment.SampleFileName"/> values are resolved.
+    /// When null, pads that reference a sample file will throw <see cref="InvalidOperationException"/> at play time.
+    /// </param>
+    /// <param name="maxPolyphony">Maximum simultaneous voices; oldest is evicted when the cap is reached.</param>
+    public SynthAudioEngine(
+        IAudioPlaybackBackend playbackBackend,
+        ISampleImporter? sampleImporter,
+        ISampleExporter? sampleExporter,
+        string? samplesDirectory,
+        int maxPolyphony = 1)
     {
         _playbackBackend = playbackBackend;
+        _sampleImporter = sampleImporter;
+        _sampleExporter = sampleExporter;
+        _samplesDirectory = samplesDirectory;
         _maxPolyphony = Math.Max(1, maxPolyphony);
     }
 
@@ -30,6 +65,12 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
     /// <param name="cancellationToken">Optional token; cancellation stops the sustained note immediately.</param>
     /// <returns>A completed <see cref="Task"/> — playback runs fire-and-forget on the backend.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="voiceId"/> is null, empty, or whitespace.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="assignment"/> references a sample file but the engine was constructed without sample support.
+    /// </exception>
+    /// <exception cref="FileNotFoundException">
+    /// Thrown when <paramref name="assignment"/> references a sample file that does not exist in the configured samples directory.
+    /// </exception>
     public Task NoteOnAsync(string voiceId, PadAssignment assignment, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(voiceId))
@@ -37,12 +78,19 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
             throw new ArgumentException("Voice identifier is required.", nameof(voiceId));
         }
 
-        var sustainEnvelope = assignment.Envelope with { ReleaseSeconds = 0d };
-
         // Render outside the lock so concurrent NoteOn/NoteOff/NoteOffAll don't block
         // on PCM synthesis (~10s of audio = ~882KB per voice).
-        var stream = WavToneRenderer.RenderMonoPcm16(
-            assignment.Waveform, assignment.FrequencyHz, MaxSustainDuration, sustainEnvelope);
+        MemoryStream stream;
+        if (!string.IsNullOrWhiteSpace(assignment.SampleFileName))
+        {
+            stream = RenderSampleStream(assignment);
+        }
+        else
+        {
+            var sustainEnvelope = assignment.Envelope with { ReleaseSeconds = 0d };
+            stream = WavToneRenderer.RenderMonoPcm16(
+                assignment.Waveform, assignment.FrequencyHz, MaxSustainDuration, sustainEnvelope);
+        }
 
         lock (_gate)
         {
@@ -219,6 +267,27 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
                 }
             }
         }
+    }
+
+    private MemoryStream RenderSampleStream(PadAssignment assignment)
+    {
+        if (_sampleImporter is null || _sampleExporter is null || string.IsNullOrWhiteSpace(_samplesDirectory))
+        {
+            throw new InvalidOperationException(
+                $"Pad '{assignment.PadId}' references sample '{assignment.SampleFileName}' but the engine was constructed without sample support.");
+        }
+
+        var path = Path.Combine(_samplesDirectory, assignment.SampleFileName!);
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException(
+                $"Sample file '{assignment.SampleFileName}' not found in '{_samplesDirectory}'.", path);
+        }
+
+        using var fileStream = File.OpenRead(path);
+        var sample = _sampleImporter.Import(fileStream, sourcePath: path);
+        var sustainEnvelope = assignment.Envelope with { ReleaseSeconds = 0d };
+        return SampleRenderer.Render(sample, assignment.SampleGain, sustainEnvelope, _sampleExporter);
     }
 
     private async Task PlayReleaseTailAsync(PadAssignment assignment)
