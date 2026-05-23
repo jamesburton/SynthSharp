@@ -217,18 +217,8 @@ public sealed class SynthAudioEngineTests
         // Simulate natural sustain expiry (no NoteOff — the audio stream simply ends).
         v1Invocation.SignalComplete();
 
-        // Wait for the cleanup continuation to run and free the slot.
-        var deadline = DateTime.UtcNow.AddSeconds(2);
-        while (!v1Invocation.Token.IsCancellationRequested && DateTime.UtcNow < deadline)
-        {
-            // Slot is freed when PlaySustainAsync finally block runs.
-            // We probe by waiting a moment; the reference-equality guard in the engine
-            // is what prevents double-dispose.
-            await Task.Delay(10);
-        }
-
-        // Give the engine a brief moment to execute the finally block.
-        await Task.Delay(30);
+        // Give the engine's finally block a moment to run on the continuation queued by SignalComplete().
+        await Task.Delay(50);
 
         // Start a brand-new voice with a different ID — should claim the freed slot, NOT evict v1.
         await engine.NoteOnAsync("v2", MakePad(releaseSeconds: 0d));

@@ -16,6 +16,8 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
     private const string PreviewVoiceId = "__preview";
 
     /// <summary>Initializes a new engine with the given backend and polyphony cap.</summary>
+    /// <param name="playbackBackend">The audio playback backend used to render PCM streams.</param>
+    /// <param name="maxPolyphony">Maximum simultaneous voices; oldest is evicted when the cap is reached.</param>
     public SynthAudioEngine(IAudioPlaybackBackend playbackBackend, int maxPolyphony = 1)
     {
         _playbackBackend = playbackBackend;
@@ -23,6 +25,11 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
     }
 
     /// <summary>Starts a sustained note for the given voice, stopping any prior note on the same voice ID.</summary>
+    /// <param name="voiceId">Unique identifier for the voice slot; case-insensitive.</param>
+    /// <param name="assignment">Pad assignment describing waveform, frequency, and envelope.</param>
+    /// <param name="cancellationToken">Optional token; cancellation stops the sustained note immediately.</param>
+    /// <returns>A completed <see cref="Task"/> — playback runs fire-and-forget on the backend.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="voiceId"/> is null, empty, or whitespace.</exception>
     public Task NoteOnAsync(string voiceId, PadAssignment assignment, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(voiceId))
@@ -30,13 +37,19 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
             throw new ArgumentException("Voice identifier is required.", nameof(voiceId));
         }
 
+        var sustainEnvelope = assignment.Envelope with { ReleaseSeconds = 0d };
+
+        // Render outside the lock so concurrent NoteOn/NoteOff/NoteOffAll don't block
+        // on PCM synthesis (~10s of audio = ~882KB per voice).
+        var stream = WavToneRenderer.RenderMonoPcm16(
+            assignment.Waveform, assignment.FrequencyHz, MaxSustainDuration, sustainEnvelope);
+
         lock (_gate)
         {
             StopVoiceNoLock(voiceId);
             EnsureVoiceCapacityNoLock();
 
             var voiceCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            var sustainEnvelope = assignment.Envelope with { ReleaseSeconds = 0d };
             var voice = new ActiveVoice(
                 VoiceId: voiceId,
                 Assignment: assignment,
@@ -46,13 +59,14 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
             // Register before firing PlaySustainAsync so the cleanup continuation
             // can find the voice in the dictionary even in synchronous-completion edge cases.
             _activeVoices[voiceId] = voice;
-            _ = PlaySustainAsync(voice, sustainEnvelope);
+            _ = PlaySustainAsync(voice, stream);
         }
 
         return Task.CompletedTask;
     }
 
     /// <summary>Ends a sustained note and plays the release tail if the envelope has a non-zero release.</summary>
+    /// <param name="voiceId">The voice identifier passed to <see cref="NoteOnAsync"/>; no-op if not found.</param>
     public void NoteOff(string voiceId)
     {
         if (string.IsNullOrWhiteSpace(voiceId))
@@ -95,6 +109,10 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
     }
 
     /// <summary>Previews a pad by starting a note, waiting the requested duration, then stopping it.</summary>
+    /// <param name="assignment">Pad assignment describing waveform, frequency, and envelope.</param>
+    /// <param name="duration">How long to hold the note before calling <see cref="NoteOff"/>.</param>
+    /// <param name="cancellationToken">Optional token; cancellation stops the preview immediately.</param>
+    /// <returns>A <see cref="Task"/> that completes once the note has been stopped.</returns>
     public async Task PlayPadAsync(PadAssignment assignment, TimeSpan duration, CancellationToken cancellationToken = default)
     {
         await NoteOnAsync(PreviewVoiceId, assignment, cancellationToken);
@@ -132,19 +150,23 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
         existingVoice.CancellationSource.Dispose();
     }
 
-    private async Task PlaySustainAsync(ActiveVoice voice, Envelope sustainEnvelope)
+    private async Task PlaySustainAsync(ActiveVoice voice, MemoryStream stream)
     {
         try
         {
-            using var stream = WavToneRenderer.RenderMonoPcm16(
-                voice.Assignment.Waveform,
-                voice.Assignment.FrequencyHz,
-                MaxSustainDuration,
-                sustainEnvelope);
-            await _playbackBackend.PlayAsync(stream, voice.CancellationSource.Token);
+            using (stream)
+            {
+                await _playbackBackend.PlayAsync(stream, voice.CancellationSource.Token);
+            }
         }
         catch (OperationCanceledException)
         {
+            // Expected when NoteOff cancels the voice.
+        }
+        catch (Exception)
+        {
+            // Swallow any backend failure — this is a fire-and-forget audio path with no recovery path.
+            // A future logging seam would go here.
         }
         finally
         {
@@ -167,19 +189,26 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
 
     private async Task PlayReleaseTailAsync(PadAssignment assignment)
     {
-        var releaseDuration = TimeSpan.FromSeconds(Math.Max(0.02d, assignment.Envelope.ReleaseSeconds));
-        var releaseEnvelope = new Envelope(
-            AttackSeconds: 0d,
-            DecaySeconds: 0d,
-            SustainLevel: 1d,
-            ReleaseSeconds: assignment.Envelope.ReleaseSeconds);
+        try
+        {
+            var releaseDuration = TimeSpan.FromSeconds(Math.Max(0.02d, assignment.Envelope.ReleaseSeconds));
+            var releaseEnvelope = new Envelope(
+                AttackSeconds: 0d,
+                DecaySeconds: 0d,
+                SustainLevel: 1d,
+                ReleaseSeconds: assignment.Envelope.ReleaseSeconds);
 
-        using var stream = WavToneRenderer.RenderMonoPcm16(
-            assignment.Waveform,
-            assignment.FrequencyHz,
-            releaseDuration,
-            releaseEnvelope);
-        await _playbackBackend.PlayAsync(stream);
+            using var stream = WavToneRenderer.RenderMonoPcm16(
+                assignment.Waveform,
+                assignment.FrequencyHz,
+                releaseDuration,
+                releaseEnvelope);
+            await _playbackBackend.PlayAsync(stream);
+        }
+        catch
+        {
+            // Fire-and-forget release tail; nothing to do on failure.
+        }
     }
 
     private sealed record ActiveVoice(
