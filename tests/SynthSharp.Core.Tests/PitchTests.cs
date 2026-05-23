@@ -118,4 +118,41 @@ public class PitchTests
             yield return new object[] { midi };
         }
     }
+
+    // ---------------------------------------------------------------------------
+    // SnapToNearestSemitone tests
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void SnapToNearestSemitone_440Hz_Returns440()
+    {
+        // 440 Hz is exactly A4; snapping should return 440 within floating-point tolerance.
+        var result = Pitch.SnapToNearestSemitone(440.0);
+        Assert.True(Math.Abs(result - 440.0) < 0.001, $"Expected ~440 but got {result}");
+    }
+
+    [Fact]
+    public void SnapToNearestSemitone_450Hz_SnapsToA4_440Hz()
+    {
+        // 450 Hz is closer to A4 (440 Hz) than to A#4 (466.16 Hz); should snap to 440.
+        var result = Pitch.SnapToNearestSemitone(450.0);
+        Assert.InRange(result, 439.5, 440.5);
+    }
+
+    [Fact]
+    public void SnapToNearestSemitone_880Hz_Returns880()
+    {
+        // 880 Hz is exactly A5; snapping should return 880 within floating-point tolerance.
+        var result = Pitch.SnapToNearestSemitone(880.0);
+        Assert.True(Math.Abs(result - 880.0) < 0.001, $"Expected ~880 but got {result}");
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(-100.0)]
+    public void SnapToNearestSemitone_NonPositive_ReturnsZero(double hz)
+    {
+        var result = Pitch.SnapToNearestSemitone(hz);
+        Assert.Equal(0d, result);
+    }
 }

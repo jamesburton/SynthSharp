@@ -102,6 +102,18 @@ public static partial class Pitch
         return midi is >= 0 and <= 127 ? midi : -1;
     }
 
+    /// <summary>Returns the frequency of the nearest MIDI semitone to <paramref name="frequencyHz"/>.</summary>
+    /// <param name="frequencyHz">A positive frequency in Hz.</param>
+    /// <returns>
+    /// The frequency of the nearest MIDI note in Hz, or 0 if <paramref name="frequencyHz"/> is non-positive
+    /// or falls outside the MIDI 0–127 range.
+    /// </returns>
+    public static double SnapToNearestSemitone(double frequencyHz)
+    {
+        var midi = ToMidiNote(frequencyHz);
+        return midi < 0 ? 0d : ToFrequencyHz(midi);
+    }
+
     /// <summary>Converts a MIDI note number to a textual note name using sharps (e.g., 69 → "A4", 61 → "C#4").</summary>
     /// <param name="midiNote">MIDI note number in [0, 127].</param>
     /// <returns>The note name with octave suffix.</returns>
