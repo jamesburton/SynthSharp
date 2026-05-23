@@ -26,32 +26,36 @@
 - No UI integration yet — there is no MAUI file picker, "Load sample" button, or pad-to-sample binding. Sample wiring through the app comes with the Sample lane evolution phase.
 - The importer assumes the source stream is seekable (uses `Seek` to skip chunks). Non-seekable network streams would need a wrapping seekable buffer.
 - No streaming-decode API: the entire sample is decoded into memory at import time. Long samples consume `frameCount × channelCount × 4` bytes.
+- **Pitch detection + tone-range extraction (Phase 3):** `PitchEstimate`, `PitchDetectionOptions`, `IPitchDetector` in `SynthSharp.Core.Music`; `NWavesPitchDetector` in `SynthSharp.Audio` runs NWaves' YIN per windowed frame over a downmixed-to-mono `float[]` and aggregates valid frames by median with `ConfidenceScore = validFrames / totalFrames`. `SampleToneRange` + `ToneRangeOptions` + `IToneRangeEstimator` + `DefaultToneRangeEstimator` derive a recommended ±N-semitone playable range, clamped to MIDI [0, 127] and gated by a minimum confidence. `Pitch` static helpers extended with `ToMidiNote(double)` and `ToNoteName(int)`. 30+ unit tests including sine/sawtooth detection, silence, polarity-cancelled downmix, MIDI extremes clamping, and a guard against NWaves issue #88.
+
+### Known limitations (Phase 3)
+
+- **NWaves 0.9.6** is the underlying DSP library; last release **2021-10-06**. Research (see commit history) confirmed it is the only published MIT-licensed .NET NuGet that ships YIN pitch detection — NAudio, Math.NET, ManagedBass and other actively-maintained alternatives do not cover pitch detection, and BSD/LGPL/Aubio alternatives were ruled out on license or distribution grounds. The `IPitchDetector` abstraction keeps the dependency swappable should a better-maintained option emerge.
+- NWaves issue #88 (`Pitch.FromYin` `IndexOutOfRangeException` for small windows / low pitches) is unfixed upstream; `NWavesPitchDetector` guards against the failing parameter combination by computing the minimum frame size required for the requested `MinHz` and throwing `ArgumentException` if the options are pathological.
+- Tone-range output is **metadata only** — no actual pitch-shifting yet. Variant generation (resampling or phase-vocoder-based pitch shift) belongs to the Pitch editing and melodic mapping phase.
+- Default YIN search range is 50 Hz – 2 kHz; instruments above C7 (~2093 Hz) need a wider `MaxHz` option to detect cleanly.
 
 ## Next planned phases
 
-1. **Pitch detection + tone-range extraction**
-   - Analyze input samples for fundamental frequency.
-   - Auto-generate playable pitch ranges from input material.
-
-2. **Pitch editing and melodic mapping**
+1. **Pitch editing and melodic mapping**
    - Add pitch-edit controls (coarse/fine tuning and note snapping).
    - Allow generating/assigning melodic note variants from imported sounds.
    - Support varied per-pad melodic assignments from one source sample.
 
-3. **Sample lane evolution**
+2. **Sample lane evolution**
    - Add file-based sample assignment and playback for mixed sample row.
    - Add per-sample gain/trim controls.
    - Introduce MAUI file picker and "Load sample" UI affordance on a pad.
 
-4. **Track editor foundation**
+3. **Track editor foundation**
    - Introduce timeline model and bar/step grid.
    - Record triggered events into pattern clips.
 
-5. **Sound editor**
+4. **Sound editor**
    - Add richer oscillator/envelope controls.
    - Add filter/LFO primitives.
 
-6. **Packaging and distribution hardening**
+5. **Packaging and distribution hardening**
    - Add signing/notarization flows for additional MAUI platform artifacts.
    - Expand release matrices (additional RIDs/architectures).
    - Add smoke tests for `dnx` + global-tool install paths in CI.
