@@ -8,6 +8,9 @@ namespace SynthSharp.App;
 /// </summary>
 public sealed class MauiAudioPlaybackBackend : IAudioPlaybackBackend
 {
+    private static readonly TimeSpan StartupGracePeriod = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(10);
+
     private readonly IAudioManager _audioManager;
 
     /// <summary>Initializes a new backend wrapping the given Plugin.Maui.Audio audio manager.</summary>
@@ -18,46 +21,84 @@ public sealed class MauiAudioPlaybackBackend : IAudioPlaybackBackend
 
     /// <summary>Plays the supplied PCM WAV stream synchronously to completion or cancellation.</summary>
     /// <remarks>
-    /// Uses the <see cref="IAudioPlayer.PlaybackEnded"/> event rather than polling
-    /// <see cref="IAudioPlayer.IsPlaying"/>. On Windows, Plugin.Maui.Audio defines IsPlaying
-    /// as <c>PlaybackState == MediaPlaybackState.Playing</c>, which is false for a window of
-    /// time immediately after <see cref="IAudioPlayer.Play"/> returns (state is still Opening
-    /// or Buffering). A naive <c>while (player.IsPlaying)</c> poll exits before any audio flows
-    /// and the player gets disposed silent — the original cause of the v0.1.0 "silent app" bug.
+    /// Uses an <see cref="IAudioPlayer.IsPlaying"/> poll with a startup grace period rather
+    /// than the <see cref="IAudioPlayer.PlaybackEnded"/> event. Two reasons:
+    /// <list type="number">
+    /// <item><description>
+    /// On Windows, Plugin.Maui.Audio defines IsPlaying as <c>PlaybackState == MediaPlaybackState.Playing</c>.
+    /// Immediately after <see cref="IAudioPlayer.Play"/> returns the state is still
+    /// Opening or Buffering, so a naive poll exits before any audio flows. The startup
+    /// grace period waits up to <see cref="StartupGracePeriod"/> for the state to
+    /// transition to Playing before treating IsPlaying=false as "playback finished".
+    /// </description></item>
+    /// <item><description>
+    /// <see cref="IAudioPlayer.PlaybackEnded"/> has been observed not to fire reliably for very
+    /// short streams (release tails of a few tens of milliseconds) or when the underlying
+    /// MediaPlayer fails to load the source. Polling guarantees this method always returns
+    /// rather than hanging forever and leaking the player + stream + fire-and-forget Task.
+    /// </description></item>
+    /// </list>
     /// </remarks>
     public async Task PlayAsync(Stream pcmWaveStream, CancellationToken cancellationToken = default)
     {
         pcmWaveStream.Position = 0;
         using var player = _audioManager.CreatePlayer(pcmWaveStream);
 
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnPlaybackEnded(object? sender, EventArgs e) => completion.TrySetResult();
-        player.PlaybackEnded += OnPlaybackEnded;
-
         try
         {
-            // Register cancellation before Play so a fast cancel still routes through Stop.
-            using var cancelReg = cancellationToken.Register(() =>
+            player.Play();
+
+            // Phase 1: wait for state to transition to Playing (or grace period to expire).
+            var startupDeadline = DateTime.UtcNow + StartupGracePeriod;
+            while (!player.IsPlaying && DateTime.UtcNow < startupDeadline)
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
                 try
                 {
-                    player.Stop();
+                    await Task.Delay(PollInterval, cancellationToken).ConfigureAwait(false);
                 }
-                catch
+                catch (OperationCanceledException)
                 {
-                    // Plugin.Maui.Audio Stop is best-effort across platforms; swallow any
-                    // platform exception during cancel so we always complete the task.
+                    return;
                 }
+            }
 
-                completion.TrySetResult();
-            });
+            // Phase 2: poll for completion or cancellation. If IsPlaying never became true
+            // (e.g. MediaPlayer failed to load the source), this loop exits immediately,
+            // the player is stopped in the finally block, and the method returns cleanly —
+            // no hang.
+            try
+            {
+                while (player.IsPlaying)
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
 
-            player.Play();
-            await completion.Task.ConfigureAwait(false);
+                    await Task.Delay(PollInterval, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancellation mid-delay; fall through to the finally Stop.
+            }
         }
         finally
         {
-            player.PlaybackEnded -= OnPlaybackEnded;
+            try
+            {
+                player.Stop();
+            }
+            catch
+            {
+                // Plugin.Maui.Audio Stop is best-effort across platforms; swallow any
+                // platform exception during teardown so we always release the player.
+            }
         }
     }
 }
