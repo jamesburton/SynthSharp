@@ -42,23 +42,27 @@
 - Variant generation is metadata-only — no preset wiring yet. Pads can't yet be auto-assigned from a generated variant set; that integration belongs to the Sample lane evolution phase.
 - `Pitch.SnapToNearestSemitone` is exposed but not yet wired into the MAUI pitch editor UI; an Apply-time snap toggle would naturally live next to the pitch entry.
 - Pitch shifting beyond ±12 semitones is supported by the algorithm but quality degrades quickly outside that window; the variant generator does not warn or refuse extreme offsets.
+- **Sample lane evolution (Phase 5):** `PadAssignment` extended with `SampleFileName` (null = synth) and `SampleGain` (linear multiplier). `SynthAudioEngine` takes optional `ISampleImporter` + `ISampleExporter` + samples directory; on `NoteOn` for sample pads, loads the WAV, applies pad gain and the ADSR envelope, re-encodes as PCM16 via `SampleRenderer`, and feeds the same `IAudioPlaybackBackend` as the synth path. MAUI pad editor now has a "Load sample…" button (cross-platform `FilePicker.PickAsync` with WAV filter), a "Clear sample" button, a current-filename label, and a "Gain (0–2)" entry. Picked WAVs are copied into `AppDataDirectory/samples/{guid}.wav` so the original source can move without breaking the pad. Preset JSON round-trips the new fields.
+
+### Known limitations (Phase 5)
+
+- No looping support — samples play once per NoteOn through their natural length. Holding a key past the sample's duration produces silence until release.
+- No per-sample trim start/end yet — the full file is always played from offset 0.
+- No per-channel pan or stereo width controls.
+- ADSR envelope is applied as a multiplier across the sample's frames. For percussion this is fine; for sustained instrument samples you may want envelope = (0, 0, 1, 0) to avoid amplitude shaping on top of the source.
+- `MainPage.GetSamplesDirectory()` is the single source of truth — moving the AppData location, e.g. via a roaming profile change, would orphan existing sample references in saved presets.
 
 ## Next planned phases
 
-1. **Sample lane evolution**
-   - Add file-based sample assignment and playback for mixed sample row.
-   - Add per-sample gain/trim controls.
-   - Introduce MAUI file picker and "Load sample" UI affordance on a pad.
-
-2. **Track editor foundation**
+1. **Track editor foundation**
    - Introduce timeline model and bar/step grid.
    - Record triggered events into pattern clips.
 
-3. **Sound editor**
+2. **Sound editor**
    - Add richer oscillator/envelope controls.
    - Add filter/LFO primitives.
 
-4. **Packaging and distribution hardening**
+3. **Packaging and distribution hardening**
    - Add signing/notarization flows for additional MAUI platform artifacts.
    - Expand release matrices (additional RIDs/architectures).
    - Add smoke tests for `dnx` + global-tool install paths in CI.
