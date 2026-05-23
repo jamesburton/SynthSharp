@@ -127,6 +127,40 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
         }
     }
 
+    /// <inheritdoc/>
+    public async Task WarmupAsync(CancellationToken cancellationToken = default)
+    {
+        // Render a 20 ms silent burst (sustain level 0 across the whole sample) and play it
+        // through the backend. The render is cheap (~1.8 KB of zeros) and the backend call
+        // forces the platform-specific media pipeline to spin up — on Windows that's
+        // Plugin.Maui.Audio creating the WinRT MediaPlayer + MediaSource for the first time,
+        // which is the dominant latency source on the first user-triggered note.
+        var silentEnvelope = new Envelope(
+            AttackSeconds: 0d,
+            DecaySeconds: 0d,
+            SustainLevel: 0d,
+            ReleaseSeconds: 0d);
+
+        using var stream = WavToneRenderer.RenderMonoPcm16(
+            WaveformType.Sine,
+            frequencyHz: 100d,
+            duration: TimeSpan.FromMilliseconds(20),
+            envelope: silentEnvelope);
+
+        try
+        {
+            await _playbackBackend.PlayAsync(stream, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Warmup cancellation is fine — caller can abort if they're shutting down early.
+        }
+        catch
+        {
+            // Best-effort warmup; swallow any backend startup failure so it doesn't crash the app.
+        }
+    }
+
     private void EnsureVoiceCapacityNoLock()
     {
         while (_activeVoices.Count >= _maxPolyphony)

@@ -26,4 +26,14 @@ public interface ISynthAudioEngine
     /// <param name="cancellationToken">Optional token; cancellation stops the preview immediately.</param>
     /// <returns>A <see cref="Task"/> that completes once the note has been stopped.</returns>
     Task PlayPadAsync(PadAssignment assignment, TimeSpan duration, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Plays a short silent burst end-to-end to pre-warm the underlying playback pipeline.
+    /// Reduces perceived latency on the first user-triggered note by paying the platform
+    /// cold-start cost (e.g. Plugin.Maui.Audio MediaPlayer pipeline initialisation on Windows)
+    /// up front rather than on first key press.
+    /// </summary>
+    /// <param name="cancellationToken">Optional token; cancellation stops the warmup immediately.</param>
+    /// <returns>A <see cref="Task"/> that completes once the silent warmup playback ends.</returns>
+    Task WarmupAsync(CancellationToken cancellationToken = default);
 }

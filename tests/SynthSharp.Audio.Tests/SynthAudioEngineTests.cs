@@ -327,4 +327,41 @@ public sealed class SynthAudioEngineTests
         Assert.True(backend.Invocations.Count >= 1);
         Assert.True(backend.Invocations[0].WasCancelled);
     }
+
+    [Fact]
+    public async Task WarmupAsync_InvokesBackendOnce_AndCompletes()
+    {
+        var backend = new FakeAudioPlaybackBackend();
+        var engine = new SynthAudioEngine(backend, maxPolyphony: 1);
+
+        var warmupTask = engine.WarmupAsync();
+
+        // Wait for the backend invocation to be registered, then complete it.
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (backend.Invocations.Count == 0 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(5);
+        }
+
+        Assert.Single(backend.Invocations);
+        backend.Invocations[0].SignalComplete();
+
+        await warmupTask;
+    }
+
+    [Fact]
+    public async Task WarmupAsync_SwallowsBackendExceptions()
+    {
+        var backend = new ThrowingBackend();
+        var engine = new SynthAudioEngine(backend, maxPolyphony: 1);
+
+        // Must not throw — warmup is best-effort.
+        await engine.WarmupAsync();
+    }
+
+    private sealed class ThrowingBackend : IAudioPlaybackBackend
+    {
+        public Task PlayAsync(Stream pcmWaveStream, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("simulated backend failure");
+    }
 }

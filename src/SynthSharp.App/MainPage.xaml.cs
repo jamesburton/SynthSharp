@@ -50,6 +50,22 @@ public partial class MainPage : ContentPage
 
         RebuildPadRows();
         SetStatus("Ready.");
+
+        // Best-effort pre-warm the audio pipeline so the user's first note doesn't
+        // pay Plugin.Maui.Audio's cold-start cost on Windows MediaPlayer.
+        // Fire-and-forget on the thread pool — by the time the user looks at the UI
+        // and presses a key, the warmup is well finished.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _audioEngine.WarmupAsync();
+            }
+            catch
+            {
+                // Silent failure — warmup is purely an optimisation.
+            }
+        });
     }
 
     protected override void OnAppearing()
