@@ -1,4 +1,4 @@
-﻿using SynthSharp.Audio;
+using SynthSharp.Audio;
 using SynthSharp.Core.Audio;
 using SynthSharp.Core.Layout;
 using SynthSharp.Core.Music;
@@ -9,6 +9,9 @@ namespace SynthSharp.App;
 
 public partial class MainPage : ContentPage
 {
+    private const string KeyboardVoicePrefix = "key:";
+    private const string PadVoicePrefix = "pad:";
+
     private readonly ISynthAudioEngine _audioEngine;
     private readonly IKeyboardInputSource _keyboardInputSource;
     private readonly PadTriggerRouter _padTriggerRouter;
@@ -38,6 +41,7 @@ public partial class MainPage : ContentPage
             .ToList();
 
         _keyboardInputSource.KeyPressed += OnKeyboardInput;
+        _keyboardInputSource.KeyReleased += OnKeyboardRelease;
 
         if (PadPicker.ItemsSource.Count > 0)
         {
@@ -56,6 +60,7 @@ public partial class MainPage : ContentPage
 
     protected override void OnDisappearing()
     {
+        _audioEngine.NoteOffAll();
         _keyboardInputSource.Stop();
         base.OnDisappearing();
     }
@@ -72,6 +77,10 @@ public partial class MainPage : ContentPage
         KeyBindingEntry.Text = pad.KeyBinding;
         PitchEntry.Text = pad.FrequencyHz.ToString("0.##");
         WaveformPicker.SelectedItem = pad.Waveform.ToString();
+        AttackEntry.Text = pad.Envelope.AttackSeconds.ToString("0.###");
+        DecayEntry.Text = pad.Envelope.DecaySeconds.ToString("0.###");
+        SustainEntry.Text = pad.Envelope.SustainLevel.ToString("0.###");
+        ReleaseEntry.Text = pad.Envelope.ReleaseSeconds.ToString("0.###");
     }
 
     private async void OnApplyPadClicked(object? sender, EventArgs e)
@@ -102,10 +111,20 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        if (!TryParseNonNegative(AttackEntry.Text, out var attackSeconds)
+            || !TryParseNonNegative(DecayEntry.Text, out var decaySeconds)
+            || !TryParseInRange(SustainEntry.Text, 0d, 1d, out var sustainLevel)
+            || !TryParseNonNegative(ReleaseEntry.Text, out var releaseSeconds))
+        {
+            SetStatus("Envelope values are invalid. Attack/Decay/Release >= 0 and Sustain in 0..1.");
+            return;
+        }
+
         pad.KeyBinding = key;
         pad.Label = string.IsNullOrWhiteSpace(LabelEntry.Text) ? pad.PadId : LabelEntry.Text.Trim();
         pad.FrequencyHz = frequency;
         pad.Waveform = waveform;
+        pad.Envelope = new Envelope(attackSeconds, decaySeconds, sustainLevel, releaseSeconds);
 
         _padTriggerRouter.Rebuild(_currentPreset.Pads);
         RefreshPadPickerItems();
@@ -158,17 +177,6 @@ public partial class MainPage : ContentPage
         SetStatus("Preset loaded.");
     }
 
-    private async void OnPadButtonClicked(object? sender, EventArgs e)
-    {
-        if (sender is not Button button || button.BindingContext is not string padId || !_padsById.TryGetValue(padId, out var pad))
-        {
-            return;
-        }
-
-        SelectPad(pad.PadId);
-        await PlayPadAsync(pad);
-    }
-
     private void OnKeyboardInput(object? sender, string keyToken)
     {
         if (!_padTriggerRouter.TryResolvePad(keyToken, out var padId) || !_padsById.TryGetValue(padId, out var pad))
@@ -179,8 +187,29 @@ public partial class MainPage : ContentPage
         _ = MainThread.InvokeOnMainThreadAsync(async () =>
         {
             SelectPad(padId);
-            await PlayPadAsync(pad);
+            await StartPadVoiceAsync(pad, ToKeyboardVoiceId(keyToken));
         });
+    }
+
+    private void OnKeyboardRelease(object? sender, string keyToken)
+    {
+        _ = MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            _audioEngine.NoteOff(ToKeyboardVoiceId(keyToken));
+            return Task.CompletedTask;
+        });
+    }
+
+    private async Task StartPadVoiceAsync(PadAssignment pad, string voiceId)
+    {
+        try
+        {
+            await _audioEngine.NoteOnAsync(voiceId, pad);
+            SetStatus($"Playing {pad.Label} ({pad.FrequencyHz:0.##} Hz, {pad.Waveform}).");
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private async Task PlayPadAsync(PadAssignment pad)
@@ -192,7 +221,6 @@ public partial class MainPage : ContentPage
         }
         catch (OperationCanceledException)
         {
-            // Monophonic playback cancels previous note when a new note starts.
         }
     }
 
@@ -249,7 +277,7 @@ public partial class MainPage : ContentPage
             var row = new HorizontalStackLayout { Spacing = 6 };
             foreach (var pad in group.OrderBy(x => x.ColumnIndex))
             {
-                row.Children.Add(new Button
+                var button = new Button
                 {
                     BindingContext = pad.PadId,
                     FontSize = 12,
@@ -258,8 +286,16 @@ public partial class MainPage : ContentPage
                     WidthRequest = 82,
                     HeightRequest = 56,
                     LineBreakMode = LineBreakMode.WordWrap,
-                    Command = new Command(async () => await PlayPadAsync(pad)),
-                });
+                };
+
+                button.Pressed += async (_, _) =>
+                {
+                    SelectPad(pad.PadId);
+                    await StartPadVoiceAsync(pad, ToPadVoiceId(pad.PadId));
+                };
+                button.Released += (_, _) => _audioEngine.NoteOff(ToPadVoiceId(pad.PadId));
+
+                row.Children.Add(button);
             }
 
             PadRowsLayout.Children.Add(rowLabel);
@@ -280,6 +316,20 @@ public partial class MainPage : ContentPage
     {
         return Path.Combine(FileSystem.Current.AppDataDirectory, "synthsharp-preset.json");
     }
+
+    private static bool TryParseNonNegative(string? text, out double value)
+    {
+        return double.TryParse(text, out value) && value >= 0d;
+    }
+
+    private static bool TryParseInRange(string? text, double min, double max, out double value)
+    {
+        return double.TryParse(text, out value) && value >= min && value <= max;
+    }
+
+    private static string ToKeyboardVoiceId(string keyToken) => $"{KeyboardVoicePrefix}{keyToken}";
+
+    private static string ToPadVoiceId(string padId) => $"{PadVoicePrefix}{padId}";
 
     private void SetStatus(string message)
     {

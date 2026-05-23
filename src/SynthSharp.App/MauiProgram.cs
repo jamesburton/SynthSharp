@@ -24,7 +24,9 @@ public static class MauiProgram
 		builder.Services.AddSingleton<PadTriggerRouter>(sp => new PadTriggerRouter(sp.GetRequiredService<KeyboardLayoutPreset>().Pads));
 		builder.Services.AddSingleton<IKeyboardInputSource, KeyboardInputSource>();
 		builder.Services.AddSingleton<IAudioPlaybackBackend, MauiAudioPlaybackBackend>();
-		builder.Services.AddSingleton<ISynthAudioEngine, SynthAudioEngine>();
+		builder.Services.AddSingleton<ISynthAudioEngine>(sp => new SynthAudioEngine(
+			playbackBackend: sp.GetRequiredService<IAudioPlaybackBackend>(),
+			maxPolyphony: 8));
 		builder.Services.AddSingleton<MainPage>();
 
 #if DEBUG

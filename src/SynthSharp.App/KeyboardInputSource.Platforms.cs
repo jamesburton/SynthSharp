@@ -6,6 +6,7 @@ public sealed partial class KeyboardInputSource
 {
 #if WINDOWS
     private Microsoft.UI.Xaml.FrameworkElement? _keyboardElement;
+    private readonly HashSet<string> _heldKeys = new(StringComparer.OrdinalIgnoreCase);
 #endif
 
     partial void AttachPlatformHooks()
@@ -22,6 +23,7 @@ public sealed partial class KeyboardInputSource
 
             _keyboardElement = keyboardElement;
             _keyboardElement.KeyDown += OnNativeWindowKeyDown;
+            _keyboardElement.KeyUp += OnNativeWindowKeyUp;
         });
 #endif
     }
@@ -35,14 +37,34 @@ public sealed partial class KeyboardInputSource
         }
 
         _keyboardElement.KeyDown -= OnNativeWindowKeyDown;
+        _keyboardElement.KeyUp -= OnNativeWindowKeyUp;
         _keyboardElement = null;
+        _heldKeys.Clear();
 #endif
     }
 
 #if WINDOWS
     private void OnNativeWindowKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs args)
     {
-        var token = args.Key switch
+        var token = ToToken(args.Key);
+        if (token.Length > 0 && _heldKeys.Add(token))
+        {
+            RaiseKeyPressed(token);
+        }
+    }
+
+    private void OnNativeWindowKeyUp(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs args)
+    {
+        var token = ToToken(args.Key);
+        if (token.Length > 0 && _heldKeys.Remove(token))
+        {
+            RaiseKeyReleased(token);
+        }
+    }
+
+    private static string ToToken(Windows.System.VirtualKey key)
+    {
+        return key switch
         {
             Windows.System.VirtualKey.Number0 => "0",
             Windows.System.VirtualKey.Number1 => "1",
@@ -86,11 +108,6 @@ public sealed partial class KeyboardInputSource
             Windows.System.VirtualKey.Tab => "Tab",
             _ => string.Empty,
         };
-
-        if (token.Length > 0)
-        {
-            RaiseKeyPressed(token);
-        }
     }
 #endif
 }

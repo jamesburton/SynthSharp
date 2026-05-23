@@ -16,11 +16,17 @@ public sealed class MauiAudioPlaybackBackend : IAudioPlaybackBackend
     {
         pcmWaveStream.Position = 0;
         using var player = _audioManager.CreatePlayer(pcmWaveStream);
-        player.Play();
-
-        while (player.IsPlaying && !cancellationToken.IsCancellationRequested)
+        try
         {
-            await Task.Delay(10, cancellationToken);
+            player.Play();
+            while (player.IsPlaying && !cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(10, cancellationToken);
+            }
+        }
+        finally
+        {
+            player.Stop();
         }
     }
 }

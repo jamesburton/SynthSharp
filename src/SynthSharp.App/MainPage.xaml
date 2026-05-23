@@ -16,7 +16,7 @@
                     <Picker x:Name="PadPicker"
                             Title="Select pad"
                             SelectedIndexChanged="OnPadSelectionChanged" />
-                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
                         <Label Grid.Row="0" Text="Label" VerticalTextAlignment="Center" />
                         <Entry Grid.Row="0" Grid.Column="1" x:Name="LabelEntry" Placeholder="Kick / Lead A1 / etc." />
                         <Label Grid.Row="1" Text="Key" VerticalTextAlignment="Center" />
@@ -25,6 +25,14 @@
                         <Entry Grid.Row="2" Grid.Column="1" x:Name="PitchEntry" Placeholder="C4 or 440" />
                         <Label Grid.Row="3" Text="Wave" VerticalTextAlignment="Center" />
                         <Picker Grid.Row="3" Grid.Column="1" x:Name="WaveformPicker" />
+                        <Label Grid.Row="4" Text="Attack (s)" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="4" Grid.Column="1" x:Name="AttackEntry" Placeholder="0.01" />
+                        <Label Grid.Row="5" Text="Decay (s)" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="5" Grid.Column="1" x:Name="DecayEntry" Placeholder="0.05" />
+                        <Label Grid.Row="6" Text="Sustain (0-1)" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="6" Grid.Column="1" x:Name="SustainEntry" Placeholder="0.80" />
+                        <Label Grid.Row="7" Text="Release (s)" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="7" Grid.Column="1" x:Name="ReleaseEntry" Placeholder="0.10" />
                     </Grid>
                     <HorizontalStackLayout Spacing="8">
                         <Button Text="Apply to pad" Clicked="OnApplyPadClicked" />

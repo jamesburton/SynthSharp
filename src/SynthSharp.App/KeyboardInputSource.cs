@@ -7,6 +7,7 @@ public sealed partial class KeyboardInputSource : IKeyboardInputSource
     private bool _started;
 
     public event EventHandler<string>? KeyPressed;
+    public event EventHandler<string>? KeyReleased;
 
     public void Start()
     {
@@ -33,6 +34,11 @@ public sealed partial class KeyboardInputSource : IKeyboardInputSource
     private void RaiseKeyPressed(string keyToken)
     {
         KeyPressed?.Invoke(this, keyToken);
+    }
+
+    private void RaiseKeyReleased(string keyToken)
+    {
+        KeyReleased?.Invoke(this, keyToken);
     }
 
     partial void AttachPlatformHooks();
