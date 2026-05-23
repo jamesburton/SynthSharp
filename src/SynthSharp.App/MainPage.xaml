@@ -16,7 +16,7 @@
                     <Picker x:Name="PadPicker"
                             Title="Select pad"
                             SelectedIndexChanged="OnPadSelectionChanged" />
-                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
                         <Label Grid.Row="0" Text="Label" VerticalTextAlignment="Center" />
                         <Entry Grid.Row="0" Grid.Column="1" x:Name="LabelEntry" Placeholder="Kick / Lead A1 / etc." />
                         <Label Grid.Row="1" Text="Key" VerticalTextAlignment="Center" />
@@ -33,10 +33,16 @@
                         <Entry Grid.Row="6" Grid.Column="1" x:Name="SustainEntry" Placeholder="0.80" />
                         <Label Grid.Row="7" Text="Release (s)" VerticalTextAlignment="Center" />
                         <Entry Grid.Row="7" Grid.Column="1" x:Name="ReleaseEntry" Placeholder="0.10" />
+                        <Label Grid.Row="8" Text="Sample" VerticalTextAlignment="Center" />
+                        <Label Grid.Row="8" Grid.Column="1" x:Name="SampleFileLabel" Text="(none)" VerticalTextAlignment="Center" />
+                        <Label Grid.Row="9" Text="Gain (0-2)" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="9" Grid.Column="1" x:Name="GainEntry" Placeholder="1.0" />
                     </Grid>
                     <HorizontalStackLayout Spacing="8">
                         <Button Text="Apply to pad" Clicked="OnApplyPadClicked" />
                         <Button Text="Play selected" Clicked="OnPlaySelectedClicked" />
+                        <Button Text="Load sample..." Clicked="OnLoadSampleClicked" />
+                        <Button Text="Clear sample" Clicked="OnClearSampleClicked" />
                         <Button Text="Save preset" Clicked="OnSavePresetClicked" />
                         <Button Text="Load preset" Clicked="OnLoadPresetClicked" />
                     </HorizontalStackLayout>

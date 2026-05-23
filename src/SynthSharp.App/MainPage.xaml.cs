@@ -97,6 +97,8 @@ public partial class MainPage : ContentPage
         DecayEntry.Text = pad.Envelope.DecaySeconds.ToString("0.###");
         SustainEntry.Text = pad.Envelope.SustainLevel.ToString("0.###");
         ReleaseEntry.Text = pad.Envelope.ReleaseSeconds.ToString("0.###");
+        SampleFileLabel.Text = string.IsNullOrWhiteSpace(pad.SampleFileName) ? "(none)" : pad.SampleFileName;
+        GainEntry.Text = pad.SampleGain.ToString("0.###");
     }
 
     private async void OnApplyPadClicked(object? sender, EventArgs e)
@@ -136,17 +138,104 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        if (!TryParseInRange(GainEntry.Text, 0d, 2d, out var sampleGain))
+        {
+            SetStatus("Gain must be a number in 0..2.");
+            return;
+        }
+
         pad.KeyBinding = key;
         pad.Label = string.IsNullOrWhiteSpace(LabelEntry.Text) ? pad.PadId : LabelEntry.Text.Trim();
         pad.FrequencyHz = frequency;
         pad.Waveform = waveform;
         pad.Envelope = new Envelope(attackSeconds, decaySeconds, sustainLevel, releaseSeconds);
+        pad.SampleGain = sampleGain;
 
         _padTriggerRouter.Rebuild(_currentPreset.Pads);
         RefreshPadPickerItems();
         RebuildPadRows();
         await PlayPadAsync(pad);
         SetStatus($"Updated {pad.PadId}.");
+    }
+
+    private async void OnLoadSampleClicked(object? sender, EventArgs e)
+    {
+        var pad = GetSelectedPad();
+        if (pad is null)
+        {
+            SetStatus("Select a pad first.");
+            return;
+        }
+
+        FileResult? picked;
+        try
+        {
+            picked = await FilePicker.Default.PickAsync(new PickOptions
+            {
+                PickerTitle = "Select a WAV file",
+                FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
+                {
+                    [DevicePlatform.WinUI] = new[] { ".wav" },
+                    [DevicePlatform.macOS] = new[] { "wav" },
+                    [DevicePlatform.iOS] = new[] { "public.audio" },
+                    [DevicePlatform.Android] = new[] { "audio/wav", "audio/x-wav" },
+                }),
+            });
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"File picker failed: {ex.Message}");
+            return;
+        }
+
+        if (picked is null)
+        {
+            return; // user cancelled
+        }
+
+        try
+        {
+            var samplesDir = GetSamplesDirectory();
+            Directory.CreateDirectory(samplesDir);
+
+            // Generate a unique filename so multiple imports of the same source filename don't collide.
+            var safeName = Guid.NewGuid().ToString("N") + ".wav";
+            var destPath = Path.Combine(samplesDir, safeName);
+
+            using (var src = await picked.OpenReadAsync())
+            using (var dst = File.Create(destPath))
+            {
+                await src.CopyToAsync(dst);
+            }
+
+            pad.SampleFileName = safeName;
+            SampleFileLabel.Text = safeName;
+            SetStatus($"Loaded sample '{picked.FileName}' onto pad {pad.PadId} (apply to commit).");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Failed to import sample: {ex.Message}");
+        }
+    }
+
+    private void OnClearSampleClicked(object? sender, EventArgs e)
+    {
+        var pad = GetSelectedPad();
+        if (pad is null)
+        {
+            SetStatus("Select a pad first.");
+            return;
+        }
+
+        pad.SampleFileName = null;
+        SampleFileLabel.Text = "(none)";
+        SetStatus($"Cleared sample on pad {pad.PadId} (apply to commit).");
+    }
+
+    /// <summary>Returns the directory where imported sample WAV files are stored.</summary>
+    public static string GetSamplesDirectory()
+    {
+        return Path.Combine(FileSystem.Current.AppDataDirectory, "samples");
     }
 
     private async void OnPlaySelectedClicked(object? sender, EventArgs e)
