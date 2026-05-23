@@ -196,7 +196,7 @@ jobs:
           dotnet restore src/SynthSharp.Core/SynthSharp.Core.csproj
           dotnet restore src/SynthSharp.Audio/SynthSharp.Audio.csproj
           dotnet restore src/SynthSharp.Input/SynthSharp.Input.csproj
-          dotnet publish src/SynthSharp.App/SynthSharp.App.csproj -c Release -f net10.0-windows10.0.19041.0 -r win-x64 -p:WindowsPackageType=None --no-restore -o artifacts/app/windows
+          dotnet publish src/SynthSharp.App/SynthSharp.App.csproj -c Release -f net10.0-windows10.0.19041.0 -r win-x64 -p:PublishReadyToRun=false -p:WindowsPackageType=None --no-restore -o artifacts/app/windows
 
       - name: Archive MAUI app
         shell: pwsh
