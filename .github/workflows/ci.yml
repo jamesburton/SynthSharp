@@ -45,7 +45,11 @@ jobs:
         run: dotnet workload install maui-windows
 
       - name: Restore
-        run: dotnet restore src/SynthSharp.App/SynthSharp.App.csproj -p:TargetFramework=net10.0-windows10.0.19041.0
+        run: |
+          dotnet restore src/SynthSharp.Core/SynthSharp.Core.csproj
+          dotnet restore src/SynthSharp.Audio/SynthSharp.Audio.csproj
+          dotnet restore src/SynthSharp.Input/SynthSharp.Input.csproj
+          dotnet restore src/SynthSharp.App/SynthSharp.App.csproj -p:TargetFramework=net10.0-windows10.0.19041.0
 
       - name: Build Windows MAUI app
         run: dotnet build src/SynthSharp.App/SynthSharp.App.csproj -c Release -f net10.0-windows10.0.19041.0 --no-restore
