@@ -19,6 +19,21 @@ public sealed class NWavesPitchDetector : IPitchDetector
 
         var opts = options ?? new PitchDetectionOptions();
         var sampleRate = sample.Metadata.SampleRateHz;
+
+        // Guard against NWaves issue #88: Pitch.FromYin throws IndexOutOfRangeException when the
+        // frame window is too small to detect the lowest requested pitch. A frame of N samples at
+        // sampleRate Hz can detect pitches as low as sampleRate/N Hz; below that the cmdf array
+        // overruns. We fail fast with a clear message rather than letting the underlying library throw.
+        var minSamplesForMinHz = (int)Math.Ceiling(sampleRate / opts.MinHz);
+        if (opts.FrameSizeSamples < minSamplesForMinHz)
+        {
+            throw new ArgumentException(
+                $"FrameSizeSamples ({opts.FrameSizeSamples}) is too small to detect pitches as low as "
+                + $"{opts.MinHz} Hz at sample rate {sampleRate} Hz. Increase FrameSizeSamples to at least "
+                + $"{minSamplesForMinHz}, or raise MinHz. (Guards against NWaves issue #88.)",
+                nameof(options));
+        }
+
         var mono = DownmixToMono(sample);
 
         // If the signal is shorter than a single window, NWaves can't run a meaningful YIN.

@@ -301,4 +301,22 @@ public sealed class NWavesPitchDetectorTests
 
         Assert.Throws<ArgumentException>(() => detector.Estimate(sample));
     }
+
+    [Fact]
+    public void Throws_WhenFrameSizeTooSmallForMinHz_GuardsAgainstNwavesIssue88()
+    {
+        // Repro of NWaves issue #88: 256-sample window at 22050 Hz with MinHz=40 Hz.
+        // Our guard must surface ArgumentException before NWaves itself hits IndexOutOfRange.
+        var detector = new NWavesPitchDetector();
+        var sample = MakeSineSample(freqHz: 220, durationSeconds: 0.5, sampleRate: 22050);
+        var options = new PitchDetectionOptions(
+            MinHz: 40f,
+            MaxHz: 700f,
+            FrameSizeSamples: 256,
+            HopSizeSamples: 128);
+
+        var ex = Assert.Throws<ArgumentException>(() => detector.Estimate(sample, options));
+        Assert.Contains("FrameSizeSamples", ex.Message);
+        Assert.Contains("MinHz", ex.Message);
+    }
 }
