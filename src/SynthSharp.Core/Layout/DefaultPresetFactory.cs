@@ -21,6 +21,14 @@ public static class DefaultPresetFactory
         RowRole.MixedSample,
     ];
 
+    // Snappy envelope for the Percussion row: instant attack, fast decay to silence,
+    // no sustain or release. Pairs with WaveformType.Noise to produce a percussive hit.
+    private static readonly Envelope PercussionEnvelope = new(
+        AttackSeconds: 0d,
+        DecaySeconds: 0.12d,
+        SustainLevel: 0d,
+        ReleaseSeconds: 0d);
+
     public static KeyboardLayoutPreset CreateFourRowDefault()
     {
         var pads = new List<PadAssignment>();
@@ -36,9 +44,13 @@ public static class DefaultPresetFactory
                 {
                     0 => WaveformType.Sawtooth,
                     1 => WaveformType.Square,
-                    2 => WaveformType.Triangle,
+                    2 => WaveformType.Noise,
                     _ => WaveformType.Sine,
                 };
+
+                // Percussion pads get a snappy envelope so noise hits actually sound
+                // percussive. Other rows keep the default sustained envelope.
+                var envelope = row == 2 ? PercussionEnvelope : Envelope.Default;
 
                 pads.Add(new PadAssignment
                 {
@@ -50,6 +62,7 @@ public static class DefaultPresetFactory
                     Label = $"R{row + 1}-{col + 1}",
                     Waveform = waveform,
                     FrequencyHz = frequency,
+                    Envelope = envelope,
                 });
             }
         }
