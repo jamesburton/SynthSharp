@@ -31,15 +31,32 @@ public static class SampleRenderer
     /// out of scope); when that target is set the LFO is silently bypassed.
     /// Pass <see langword="null"/> or <see cref="LfoSettings.Off"/> for no modulation.
     /// </param>
+    /// <param name="loopEnabled">
+    /// When true, the source region <c>[loopStartFrame, effectiveLoopEnd)</c> is repeated to fill
+    /// <paramref name="maxOutputFrames"/> frames of output. The envelope is applied across the
+    /// whole output (not per-loop) so attack/decay/release stay natural.
+    /// </param>
+    /// <param name="loopStartFrame">Loop start frame in the source. Ignored when <paramref name="loopEnabled"/> is false.</param>
+    /// <param name="loopEndFrame">Loop end frame (exclusive) in the source; 0 means "use the source's natural end". Ignored when <paramref name="loopEnabled"/> is false.</param>
+    /// <param name="maxOutputFrames">
+    /// Cap on the output's frame count. 0 means "use the source's natural length" (no looping
+    /// extension even if <paramref name="loopEnabled"/> is true — useful for tests that don't
+    /// want a long render). Capped to the source length when looping is disabled.
+    /// </param>
     /// <returns>A PCM16 WAV MemoryStream ready for <see cref="IAudioPlaybackBackend.PlayAsync"/>.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="sample"/> or <paramref name="exporter"/> is null.</exception>
+    /// <exception cref="ArgumentException">When loop bounds are invalid (start &gt;= end with non-zero end, or negative values).</exception>
     public static MemoryStream Render(
         Sample sample,
         double gain,
         Envelope envelope,
         ISampleExporter exporter,
         FilterSettings? filter = null,
-        LfoSettings? lfo = null)
+        LfoSettings? lfo = null,
+        bool loopEnabled = false,
+        int loopStartFrame = 0,
+        int loopEndFrame = 0,
+        int maxOutputFrames = 0)
     {
         ArgumentNullException.ThrowIfNull(sample);
         ArgumentNullException.ThrowIfNull(exporter);
@@ -48,11 +65,36 @@ public static class SampleRenderer
         var sampleRate = sample.Metadata.SampleRateHz;
         var channelCount = sample.Metadata.ChannelCount;
 
+        // Resolve loop bounds and compute effective output length.
+        // loopEndFrame == 0 is a documented sentinel meaning "use the natural end of the source".
+        if (loopStartFrame < 0)
+        {
+            throw new ArgumentException($"loopStartFrame must be non-negative; got {loopStartFrame}.", nameof(loopStartFrame));
+        }
+
+        if (loopEndFrame < 0)
+        {
+            throw new ArgumentException($"loopEndFrame must be non-negative; got {loopEndFrame}.", nameof(loopEndFrame));
+        }
+
+        var effectiveLoopStart = Math.Min(loopStartFrame, frameCount);
+        var effectiveLoopEnd = loopEndFrame > 0 ? Math.Min(loopEndFrame, frameCount) : frameCount;
+
+        if (loopEnabled && effectiveLoopEnd <= effectiveLoopStart)
+        {
+            throw new ArgumentException(
+                $"loopEndFrame ({loopEndFrame}) must be greater than loopStartFrame ({loopStartFrame}) when looping is enabled.",
+                nameof(loopEndFrame));
+        }
+
+        var willLoop = loopEnabled && maxOutputFrames > frameCount && effectiveLoopEnd > effectiveLoopStart;
+        var outputFrames = willLoop ? maxOutputFrames : (maxOutputFrames > 0 ? Math.Min(maxOutputFrames, frameCount) : frameCount);
+
         var attackSamples = (int)(sampleRate * envelope.AttackSeconds);
         var decaySamples = (int)(sampleRate * envelope.DecaySeconds);
         var releaseSamples = (int)(sampleRate * envelope.ReleaseSeconds);
         var sustainStart = attackSamples + decaySamples;
-        var sustainEnd = Math.Max(sustainStart, frameCount - releaseSamples);
+        var sustainEnd = Math.Max(sustainStart, outputFrames - releaseSamples);
 
         // Determine active LFO target; null, Target.None, and Target.Pitch all mean bypass.
         // Pitch modulation requires per-sample resampling which is out of scope for sample pads.
@@ -64,16 +106,29 @@ public static class SampleRenderer
         var shaped = new float[channelCount][];
         for (var c = 0; c < channelCount; c++)
         {
-            shaped[c] = new float[frameCount];
+            shaped[c] = new float[outputFrames];
 
             // Construct one independent filter instance per channel so IIR delay-line state
             // does not cross-talk between left and right (or additional channels).
             var biquad = filter is not null ? AudioFilters.Create(filter, sampleRate) : null;
 
-            for (var i = 0; i < frameCount; i++)
+            for (var i = 0; i < outputFrames; i++)
             {
+                // Resolve source frame: first play 0..effectiveLoopEnd, then cycle through
+                // [effectiveLoopStart, effectiveLoopEnd) for the remainder of the render.
+                int srcIdx;
+                if (i < effectiveLoopEnd || !willLoop)
+                {
+                    srcIdx = Math.Min(i, frameCount - 1);
+                }
+                else
+                {
+                    var loopLen = effectiveLoopEnd - effectiveLoopStart;
+                    srcIdx = effectiveLoopStart + ((i - effectiveLoopEnd) % loopLen);
+                }
+
                 var amp = EnvelopeAmplitude(i, attackSamples, decaySamples, sustainStart, sustainEnd, releaseSamples, envelope.SustainLevel);
-                var enveloped = (float)(sample.Channels[c][i] * amp * gain);
+                var enveloped = (float)(sample.Channels[c][srcIdx] * amp * gain);
 
                 // Amplitude modulation (tremolo): multiply by (1 + lfoValue), clamped to non-negative.
                 if (activeLfoTarget == LfoTarget.Amplitude)
@@ -102,7 +157,17 @@ public static class SampleRenderer
             }
         }
 
-        var shapedSample = new Sample(sample.Metadata, shaped);
+        // When looping extends the output beyond the source's natural length, build a fresh
+        // metadata record so the Sample's invariant (channels[i].Length == FrameCount) holds.
+        var shapedMetadata = outputFrames == frameCount
+            ? sample.Metadata
+            : sample.Metadata with
+            {
+                FrameCount = outputFrames,
+                Duration = TimeSpan.FromSeconds(outputFrames / (double)sampleRate),
+            };
+
+        var shapedSample = new Sample(shapedMetadata, shaped);
         var stream = new MemoryStream();
         exporter.Export(shapedSample, stream);
         stream.Position = 0;

@@ -39,4 +39,24 @@ public sealed class PadAssignment
 
     /// <summary>Per-pad LFO; defaults to <see cref="LfoSettings.Off"/> which bypasses modulation.</summary>
     public LfoSettings Lfo { get; set; } = LfoSettings.Off;
+
+    /// <summary>
+    /// When true and <see cref="SampleFileName"/> is set, the sample's loop region is repeated
+    /// to fill the engine's maximum sustain duration. Useful for sustained instrument samples
+    /// (pads, strings, organs) that would otherwise stop after the source clip's natural length.
+    /// </summary>
+    public bool SampleLoopEnabled { get; set; }
+
+    /// <summary>
+    /// Loop start frame in source-sample space. Defaults to 0 (start of clip). Ignored when
+    /// <see cref="SampleLoopEnabled"/> is false.
+    /// </summary>
+    public int SampleLoopStartFrame { get; set; }
+
+    /// <summary>
+    /// Loop end frame in source-sample space (exclusive). 0 means "use the clip's natural end".
+    /// Must be greater than <see cref="SampleLoopStartFrame"/> when non-zero. Ignored when
+    /// <see cref="SampleLoopEnabled"/> is false.
+    /// </summary>
+    public int SampleLoopEndFrame { get; set; }
 }

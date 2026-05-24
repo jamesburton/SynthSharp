@@ -125,6 +125,10 @@ public partial class MainPage : ContentPage
         LfoTargetPicker.SelectedItem = pad.Lfo.Target.ToString();
         LfoRateEntry.Text = pad.Lfo.RateHz.ToString("0.##");
         LfoDepthEntry.Text = pad.Lfo.Depth.ToString("0.###");
+
+        LoopEnabledCheckBox.IsChecked = pad.SampleLoopEnabled;
+        LoopStartEntry.Text = pad.SampleLoopStartFrame.ToString();
+        LoopEndEntry.Text = pad.SampleLoopEndFrame.ToString();
     }
 
     private async void OnApplyPadClicked(object? sender, EventArgs e)
@@ -196,6 +200,20 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        var loopEnabled = LoopEnabledCheckBox.IsChecked;
+        if (!int.TryParse(LoopStartEntry.Text, out var loopStart) || loopStart < 0
+            || !int.TryParse(LoopEndEntry.Text, out var loopEnd) || loopEnd < 0)
+        {
+            SetStatus("Loop start and end must be non-negative integers (frame counts).");
+            return;
+        }
+
+        if (loopEnabled && loopEnd > 0 && loopEnd <= loopStart)
+        {
+            SetStatus("Loop end must be greater than loop start when looping is enabled.");
+            return;
+        }
+
         pad.KeyBinding = key;
         pad.Label = string.IsNullOrWhiteSpace(LabelEntry.Text) ? pad.PadId : LabelEntry.Text.Trim();
         pad.FrequencyHz = frequency;
@@ -204,6 +222,9 @@ public partial class MainPage : ContentPage
         pad.SampleGain = sampleGain;
         pad.Filter = new FilterSettings(filterType, filterCutoff, filterResonance);
         pad.Lfo = new LfoSettings(lfoTarget, lfoRate, lfoDepth);
+        pad.SampleLoopEnabled = loopEnabled;
+        pad.SampleLoopStartFrame = loopStart;
+        pad.SampleLoopEndFrame = loopEnd;
 
         _padTriggerRouter.Rebuild(_currentPreset.Pads);
         RefreshPadPickerItems();

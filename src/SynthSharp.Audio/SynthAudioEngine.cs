@@ -288,8 +288,25 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
         using var fileStream = File.OpenRead(path);
         var sample = _sampleImporter.Import(fileStream, sourcePath: path);
         var sustainEnvelope = assignment.Envelope with { ReleaseSeconds = 0d };
-        return SampleRenderer.Render(sample, assignment.SampleGain, sustainEnvelope, _sampleExporter,
-            filter: assignment.Filter, lfo: assignment.Lfo);
+
+        // Cap looped renders at MaxSustainDuration of frames so sustained loops match the
+        // synth path's 10s budget. Non-loop renders pass maxOutputFrames=0 and the renderer
+        // uses the source's natural length.
+        var maxOutputFrames = assignment.SampleLoopEnabled
+            ? (int)(sample.Metadata.SampleRateHz * MaxSustainDuration.TotalSeconds)
+            : 0;
+
+        return SampleRenderer.Render(
+            sample,
+            assignment.SampleGain,
+            sustainEnvelope,
+            _sampleExporter,
+            filter: assignment.Filter,
+            lfo: assignment.Lfo,
+            loopEnabled: assignment.SampleLoopEnabled,
+            loopStartFrame: assignment.SampleLoopStartFrame,
+            loopEndFrame: assignment.SampleLoopEndFrame,
+            maxOutputFrames: maxOutputFrames);
     }
 
     private async Task PlayReleaseTailAsync(PadAssignment assignment)
