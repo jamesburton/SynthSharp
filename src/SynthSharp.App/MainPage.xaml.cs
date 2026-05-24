@@ -11,6 +11,7 @@ namespace SynthSharp.App;
 public partial class MainPage : ContentPage
 {
     private const string KeyboardVoicePrefix = "key:";
+    private const string MidiVoicePrefix = "midi:";
     private const string PadVoicePrefix = "pad:";
     private const string PatternVoicePrefix = "pattern:";
 
@@ -21,11 +22,16 @@ public partial class MainPage : ContentPage
 
     private readonly ISynthAudioEngine _audioEngine;
     private readonly IKeyboardInputSource _keyboardInputSource;
+    private readonly IMidiInputSource _midiInputSource;
     private readonly PadTriggerRouter _padTriggerRouter;
     private readonly Dictionary<string, PadAssignment> _padsById;
     private readonly IPatternRecorder _patternRecorder;
     private readonly IPatternSetPlayer _patternSetPlayer;
     private readonly PatternSet _patternSet;
+
+    // Parallel list backing MidiDevicePicker; preserves stable MidiDeviceInfo objects
+    // so selection by index is safe even when two devices share the same display name.
+    private IReadOnlyList<MidiDeviceInfo> _midiDevices = Array.Empty<MidiDeviceInfo>();
 
     private KeyboardLayoutPreset _currentPreset;
     private PatternTrack _selectedTrack;
@@ -33,6 +39,7 @@ public partial class MainPage : ContentPage
     public MainPage(
         ISynthAudioEngine audioEngine,
         IKeyboardInputSource keyboardInputSource,
+        IMidiInputSource midiInputSource,
         PadTriggerRouter padTriggerRouter,
         KeyboardLayoutPreset preset,
         IPatternRecorder patternRecorder,
@@ -41,6 +48,7 @@ public partial class MainPage : ContentPage
     {
         _audioEngine = audioEngine;
         _keyboardInputSource = keyboardInputSource;
+        _midiInputSource = midiInputSource;
         _padTriggerRouter = padTriggerRouter;
         _currentPreset = preset;
         _padsById = _currentPreset.Pads.ToDictionary(x => x.PadId, StringComparer.OrdinalIgnoreCase);
@@ -68,6 +76,9 @@ public partial class MainPage : ContentPage
 
         _keyboardInputSource.KeyPressed += OnKeyboardInput;
         _keyboardInputSource.KeyReleased += OnKeyboardRelease;
+
+        _midiInputSource.NoteOn += OnMidiNoteOn;
+        _midiInputSource.NoteOff += OnMidiNoteOff;
 
         if (PadPicker.ItemsSource.Count > 0)
         {
@@ -99,6 +110,7 @@ public partial class MainPage : ContentPage
     protected override void OnAppearing()
     {
         _keyboardInputSource.Start();
+        RefreshMidiDevices();
         base.OnAppearing();
     }
 
@@ -106,6 +118,7 @@ public partial class MainPage : ContentPage
     {
         _audioEngine.NoteOffAll();
         _keyboardInputSource.Stop();
+        _midiInputSource.Stop();
         base.OnDisappearing();
     }
 
@@ -397,6 +410,75 @@ public partial class MainPage : ContentPage
         });
     }
 
+    // DryWetMIDI raises EventReceived on a background thread; all audio and UI
+    // operations must be marshalled to the main thread.
+    private void OnMidiNoteOn(object? sender, MidiNoteEvent e)
+    {
+        if (!_padTriggerRouter.TryResolvePadByMidiNote(e.MidiNote, out var padId)
+            || !_padsById.TryGetValue(padId, out var pad))
+        {
+            return; // note not bound to any pad — silently drop
+        }
+
+        _ = MainThread.InvokeOnMainThreadAsync(async () =>
+        {
+            SelectPad(padId);
+            await StartPadVoiceAsync(pad, ToMidiVoiceId(e.MidiNote));
+        });
+    }
+
+    private void OnMidiNoteOff(object? sender, MidiNoteEvent e)
+    {
+        _ = MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            _audioEngine.NoteOff(ToMidiVoiceId(e.MidiNote));
+            return Task.CompletedTask;
+        });
+    }
+
+    private void RefreshMidiDevices()
+    {
+        _midiDevices = _midiInputSource.GetAvailableDevices();
+        MidiDevicePicker.ItemsSource = _midiDevices.Select(d => d.Name).ToList();
+        if (_midiDevices.Count > 0 && MidiDevicePicker.SelectedIndex < 0)
+        {
+            MidiDevicePicker.SelectedIndex = 0;
+        }
+    }
+
+    private void OnRefreshMidiDevicesClicked(object? sender, EventArgs e)
+    {
+        RefreshMidiDevices();
+        MidiStatusLabel.Text = _midiDevices.Count == 0 ? "No MIDI devices found." : $"{_midiDevices.Count} device(s) found.";
+    }
+
+    private void OnConnectMidiClicked(object? sender, EventArgs e)
+    {
+        var index = MidiDevicePicker.SelectedIndex;
+        if (index < 0 || index >= _midiDevices.Count)
+        {
+            MidiStatusLabel.Text = "Select a MIDI device first.";
+            return;
+        }
+
+        var device = _midiDevices[index];
+        try
+        {
+            _midiInputSource.Start(device);
+            MidiStatusLabel.Text = $"Connected: {device.Name}";
+        }
+        catch (Exception ex)
+        {
+            MidiStatusLabel.Text = $"Connect failed: {ex.Message}";
+        }
+    }
+
+    private void OnDisconnectMidiClicked(object? sender, EventArgs e)
+    {
+        _midiInputSource.Stop();
+        MidiStatusLabel.Text = "Not connected.";
+    }
+
     private async Task StartPadVoiceAsync(PadAssignment pad, string voiceId)
     {
         try
@@ -529,6 +611,8 @@ public partial class MainPage : ContentPage
     }
 
     private static string ToKeyboardVoiceId(string keyToken) => $"{KeyboardVoicePrefix}{keyToken}";
+
+    private static string ToMidiVoiceId(int midiNote) => $"{MidiVoicePrefix}{midiNote}";
 
     private static string ToPadVoiceId(string padId) => $"{PadVoicePrefix}{padId}";
 

@@ -41,6 +41,12 @@ public sealed class PadAssignment
     public LfoSettings Lfo { get; set; } = LfoSettings.Off;
 
     /// <summary>
+    /// Optional MIDI note number (0-127) that triggers this pad when a MIDI input device is connected.
+    /// Null means no MIDI mapping; the pad can still be triggered by its computer-keyboard binding.
+    /// </summary>
+    public int? MidiNote { get; set; }
+
+    /// <summary>
     /// When true and <see cref="SampleFileName"/> is set, the sample's loop region is repeated
     /// to fill the engine's maximum sustain duration. Useful for sustained instrument samples
     /// (pads, strings, organs) that would otherwise stop after the source clip's natural length.

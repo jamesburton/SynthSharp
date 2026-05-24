@@ -73,6 +73,7 @@
 
 	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
 		<PackageReference Include="NAudio" Version="2.3.0" />
+		<PackageReference Include="Melanchall.DryWetMidi" Version="8.0.3" />
 	</ItemGroup>
 
 	<ItemGroup>

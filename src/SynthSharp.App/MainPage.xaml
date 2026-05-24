@@ -97,6 +97,22 @@
                 </VerticalStackLayout>
             </Border>
 
+            <Border StrokeThickness="1" Padding="12">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="MIDI input" FontAttributes="Bold" />
+                    <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                        <Label Text="Device:" VerticalTextAlignment="Center" />
+                        <Picker x:Name="MidiDevicePicker" WidthRequest="220" />
+                        <Button Text="Refresh" Clicked="OnRefreshMidiDevicesClicked" />
+                    </HorizontalStackLayout>
+                    <HorizontalStackLayout Spacing="8">
+                        <Button x:Name="MidiConnectButton" Text="Connect" Clicked="OnConnectMidiClicked" />
+                        <Button Text="Disconnect" Clicked="OnDisconnectMidiClicked" />
+                    </HorizontalStackLayout>
+                    <Label x:Name="MidiStatusLabel" Text="Not connected." />
+                </VerticalStackLayout>
+            </Border>
+
             <VerticalStackLayout x:Name="PadRowsLayout" Spacing="8" />
         </VerticalStackLayout>
     </ScrollView>
