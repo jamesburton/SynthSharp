@@ -208,14 +208,12 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path "artifacts/app/windows/*" -DestinationPath "artifacts/app/SynthSharp.App-${{ needs.prepare.outputs.version }}-windows.zip"
 
-      - name: Export MAUI portable executable
-        shell: pwsh
-        run: |
-          $exe = Get-ChildItem "artifacts/app/windows" -Filter "*.exe" | Where-Object { $_.Name -eq "SynthSharp.App.exe" } | Select-Object -First 1
-          if ($null -eq $exe) {
-            throw "Could not find SynthSharp.App.exe in publish output."
-          }
-          Copy-Item $exe.FullName "artifacts/app/SynthSharp.App-${{ needs.prepare.outputs.version }}-windows.exe"
+      # Note: we deliberately do NOT ship a standalone SynthSharp.App.exe artifact.
+      # MAUI Windows unpackaged apps require all ~346 dependency DLLs in the same directory
+      # as the apphost; copying just the .exe gives users a binary that silently terminates
+      # at launch because the Windows loader can't dialog missing-DLL errors for GUI apps.
+      # Users download the zip, extract it, and run SynthSharp.App.exe from inside the
+      # extracted folder.
 
       # TODO(packaging-phase-9): Authenticode signing for MAUI Windows binaries
       # Enable by setting the WINDOWS_CERT_PFX_BASE64 and WINDOWS_CERT_PASSWORD repository secrets.
@@ -236,9 +234,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: maui-windows
-          path: |
-            artifacts/app/SynthSharp.App-${{ needs.prepare.outputs.version }}-windows.zip
-            artifacts/app/SynthSharp.App-${{ needs.prepare.outputs.version }}-windows.exe
+          path: artifacts/app/SynthSharp.App-${{ needs.prepare.outputs.version }}-windows.zip
 
   smoke-test-tool:
     runs-on: ${{ matrix.os }}
@@ -317,4 +313,3 @@ jobs:
             dist/**/*.zip
             dist/**/*.tar.gz
             dist/**/*.nupkg
-            dist/**/*.exe

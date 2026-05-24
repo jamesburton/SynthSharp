@@ -39,11 +39,9 @@ This is now confirmed from .NET tooling model: `dnx`/`dotnet tool exec` runs **.
 Use one of these MAUI app paths:
 
 1. Download the Windows app zip from the release page:  
-   `SynthSharp.App-0.5.0-windows.zip`
-2. Or download the portable launcher executable artifact:  
-   `SynthSharp.App-0.5.0-windows.exe`  
-   (convenience launcher; if dependencies are missing, use the full zip payload)
-3. Run locally from source:
+   `SynthSharp.App-0.5.0-windows.zip`  
+   **Extract the zip first**, then run `SynthSharp.App.exe` from *inside the extracted folder* — the app is an unpackaged MAUI Windows build and needs all its dependency DLLs co-located in the same directory. Running a copy of `SynthSharp.App.exe` on its own will silently fail to start.
+2. Run locally from source:
 
 ```powershell
 dotnet restore SynthSharp.slnx
@@ -68,9 +66,8 @@ Accepted `--pitch` values: note names (`A4`, `C#5`) or Hz (`440`, `523.25`)
 Release pipeline (`release.yml`, on `v*` tags or manual dispatch) publishes:
 - NuGet packages: `SynthSharp.Core`, `SynthSharp.Audio`, `SynthSharp.Input`, `SynthSharp.Tool`
 - Tool binaries: `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`
-- MAUI app artifacts:
-  - `SynthSharp.App-<version>-windows.zip` (full publish payload)
-  - `SynthSharp.App-<version>-windows.exe` (portable launcher convenience)
+- MAUI app artifact:
+  - `SynthSharp.App-<version>-windows.zip` — full publish payload; extract and run `SynthSharp.App.exe` from inside the extracted folder.
 - GitHub Release with all artifacts attached
 
 CI pipeline (`ci.yml`) runs tests and validates Windows MAUI build path.
