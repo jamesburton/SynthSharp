@@ -420,10 +420,12 @@ public partial class MainPage : ContentPage
             return; // note not bound to any pad — silently drop
         }
 
+        // Capture velocity from the MIDI event before dispatching to the main thread.
+        var velocity = e.Velocity;
         _ = MainThread.InvokeOnMainThreadAsync(async () =>
         {
             SelectPad(padId);
-            await StartPadVoiceAsync(pad, ToMidiVoiceId(e.MidiNote));
+            await StartPadVoiceAsync(pad, ToMidiVoiceId(e.MidiNote), velocity);
         });
     }
 
@@ -479,11 +481,11 @@ public partial class MainPage : ContentPage
         MidiStatusLabel.Text = "Not connected.";
     }
 
-    private async Task StartPadVoiceAsync(PadAssignment pad, string voiceId)
+    private async Task StartPadVoiceAsync(PadAssignment pad, string voiceId, float velocity = 1.0f)
     {
         try
         {
-            await _audioEngine.NoteOnAsync(voiceId, pad);
+            await _audioEngine.NoteOnAsync(voiceId, pad, velocity);
             SetStatus($"Playing {pad.Label} ({pad.FrequencyHz:0.##} Hz, {pad.Waveform}).");
         }
         catch (OperationCanceledException)
@@ -789,7 +791,8 @@ public partial class MainPage : ContentPage
             SelectPad(ev.PadId);
             try
             {
-                await _audioEngine.NoteOnAsync(voiceId, pad);
+                // Use the velocity captured at record time so pattern playback preserves dynamics.
+                await _audioEngine.NoteOnAsync(voiceId, pad, ev.Velocity);
                 await Task.Delay(PatternNoteHoldDuration);
                 _audioEngine.NoteOff(voiceId);
             }

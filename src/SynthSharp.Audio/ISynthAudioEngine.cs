@@ -8,10 +8,14 @@ public interface ISynthAudioEngine
     /// <summary>Starts a sustained note for the given voice, stopping any prior note on the same voice ID.</summary>
     /// <param name="voiceId">Unique identifier for the voice slot; case-insensitive.</param>
     /// <param name="assignment">Pad assignment describing waveform, frequency, and envelope.</param>
+    /// <param name="velocity">
+    /// Linear amplitude scale in [0.0, 1.0]. Values outside this range are clamped. Defaults to
+    /// <c>1.0f</c> so existing callers compile and behave identically without a velocity argument.
+    /// </param>
     /// <param name="cancellationToken">Optional token; cancellation stops the sustained note immediately.</param>
     /// <returns>A completed <see cref="Task"/> — playback runs fire-and-forget on the backend.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="voiceId"/> is null, empty, or whitespace.</exception>
-    Task NoteOnAsync(string voiceId, PadAssignment assignment, CancellationToken cancellationToken = default);
+    Task NoteOnAsync(string voiceId, PadAssignment assignment, float velocity = 1.0f, CancellationToken cancellationToken = default);
 
     /// <summary>Ends a sustained note and plays the release tail if the envelope has a non-zero release.</summary>
     /// <param name="voiceId">The voice identifier passed to <see cref="NoteOnAsync"/>; no-op if not found.</param>
@@ -22,10 +26,14 @@ public interface ISynthAudioEngine
 
     /// <summary>Previews a pad by starting a note, waiting the requested duration, then stopping it.</summary>
     /// <param name="assignment">Pad assignment describing waveform, frequency, and envelope.</param>
-    /// <param name="duration">How long to hold the note before stopping it.</param>
+    /// <param name="duration">How long to hold the note before calling <see cref="NoteOff"/>.</param>
+    /// <param name="velocity">
+    /// Linear amplitude scale in [0.0, 1.0]. Values outside this range are clamped. Defaults to
+    /// <c>1.0f</c> so existing callers compile and behave identically without a velocity argument.
+    /// </param>
     /// <param name="cancellationToken">Optional token; cancellation stops the preview immediately.</param>
     /// <returns>A <see cref="Task"/> that completes once the note has been stopped.</returns>
-    Task PlayPadAsync(PadAssignment assignment, TimeSpan duration, CancellationToken cancellationToken = default);
+    Task PlayPadAsync(PadAssignment assignment, TimeSpan duration, float velocity = 1.0f, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Plays a short silent burst end-to-end to pre-warm the underlying playback pipeline.

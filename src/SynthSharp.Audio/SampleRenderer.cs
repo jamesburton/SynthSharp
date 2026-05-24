@@ -43,6 +43,11 @@ public static class SampleRenderer
     /// extension even if <paramref name="loopEnabled"/> is true — useful for tests that don't
     /// want a long render). Capped to the source length when looping is disabled.
     /// </param>
+    /// <param name="velocity">
+    /// Linear amplitude scale in [0.0, 1.0]. Applied as an input-gain stage before the filter:
+    /// the rendered sample is multiplied by <c>Math.Clamp(velocity, 0f, 1f)</c>. Defaults to
+    /// <c>1.0f</c> which is mathematically identical to the no-velocity path.
+    /// </param>
     /// <returns>A PCM16 WAV MemoryStream ready for <see cref="IAudioPlaybackBackend.PlayAsync"/>.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="sample"/> or <paramref name="exporter"/> is null.</exception>
     /// <exception cref="ArgumentException">When loop bounds are invalid (start &gt;= end with non-zero end, or negative values).</exception>
@@ -56,7 +61,8 @@ public static class SampleRenderer
         bool loopEnabled = false,
         int loopStartFrame = 0,
         int loopEndFrame = 0,
-        int maxOutputFrames = 0)
+        int maxOutputFrames = 0,
+        float velocity = 1.0f)
     {
         ArgumentNullException.ThrowIfNull(sample);
         ArgumentNullException.ThrowIfNull(exporter);
@@ -138,6 +144,10 @@ public static class SampleRenderer
                     var ampMod = (float)Math.Max(0d, 1d + lfoValue);
                     enveloped *= ampMod;
                 }
+
+                // Velocity: scale by clamped [0, 1] before the filter so velocity behaves as an
+                // input-gain stage. When velocity == 1.0f this is a no-op (1.0f multiply is exact).
+                enveloped *= Math.Clamp(velocity, 0f, 1f);
 
                 // Filter cutoff modulation: recreate the filter every 256 samples (~5.8 ms at 44.1 kHz).
                 // IIR state is lost on each recreation; accepted quality compromise for simplicity.

@@ -43,8 +43,11 @@ public sealed class SynthAudioEngineTests
 
         public async Task PlayAsync(Stream pcmWaveStream, CancellationToken cancellationToken = default)
         {
-            // Capture stream length immediately — stream is disposed by the caller after this returns.
-            var invocation = new Invocation(pcmWaveStream.Length, cancellationToken);
+            // Capture stream bytes immediately (before any await) — stream is disposed by the caller once PlayAsync returns.
+            using var ms = new MemoryStream();
+            pcmWaveStream.Position = 0;
+            pcmWaveStream.CopyTo(ms);
+            var invocation = new Invocation(ms.ToArray(), cancellationToken);
             Invocations.Add(invocation);
 
             // Honour cancellation: cancel the TCS so awaiting code unblocks.
@@ -56,13 +59,18 @@ public sealed class SynthAudioEngineTests
 
         public sealed class Invocation
         {
-            public Invocation(long streamLength, CancellationToken token)
+            public Invocation(byte[] payload, CancellationToken token)
             {
-                StreamLength = streamLength;
+                Payload = payload;
                 Token = token;
             }
 
-            public long StreamLength { get; }
+            /// <summary>Raw WAV bytes captured from the stream at PlayAsync entry.</summary>
+            public byte[] Payload { get; }
+
+            /// <summary>Number of bytes in the captured stream (convenience wrapper over <see cref="Payload"/>).</summary>
+            public long StreamLength => Payload.Length;
+
             public CancellationToken Token { get; }
             public TaskCompletionSource CompletionSource { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -486,5 +494,124 @@ public sealed class SynthAudioEngineTests
         {
             Directory.Delete(dir, recursive: true);
         }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Velocity tests
+    // ---------------------------------------------------------------------------
+
+    /// <summary>Explicit velocity=1.0 must produce a stream byte-identical to the no-velocity overload.</summary>
+    [Fact]
+    public async Task NoteOnAsync_Velocity_1_0_MatchesNoVelocityOverload()
+    {
+        var backend1 = new FakeAudioPlaybackBackend();
+        var engine1 = new SynthAudioEngine(backend1, maxPolyphony: 1);
+        await engine1.NoteOnAsync("v1", MakePad(releaseSeconds: 0d));
+
+        var backend2 = new FakeAudioPlaybackBackend();
+        var engine2 = new SynthAudioEngine(backend2, maxPolyphony: 1);
+        await engine2.NoteOnAsync("v1", MakePad(releaseSeconds: 0d), velocity: 1.0f);
+
+        Assert.Single(backend1.Invocations);
+        Assert.Single(backend2.Invocations);
+
+        var bytes1 = backend1.Invocations[0].Payload;
+        var bytes2 = backend2.Invocations[0].Payload;
+
+        Assert.Equal(bytes1.Length, bytes2.Length);
+        Assert.Equal(bytes1, bytes2);
+    }
+
+    /// <summary>Velocity=0.0 must produce a stream whose PCM samples are all zero (silence).</summary>
+    [Fact]
+    public async Task NoteOnAsync_Velocity_0_0_ProducesSilentOutput()
+    {
+        var backend = new FakeAudioPlaybackBackend();
+        var engine = new SynthAudioEngine(backend, maxPolyphony: 1);
+
+        await engine.NoteOnAsync("v1", MakePad(releaseSeconds: 0d), velocity: 0.0f);
+
+        Assert.Single(backend.Invocations);
+
+        var payload = backend.Invocations[0].Payload;
+        // Skip 44-byte WAV header; every PCM16 sample must be zero.
+        const int headerLen = 44;
+        for (var i = headerLen; i < payload.Length; i++)
+        {
+            Assert.Equal(0, payload[i]);
+        }
+    }
+
+    /// <summary>Velocity=0.5 must produce peak amplitude approximately half that of velocity=1.0 (within ±1 PCM unit).</summary>
+    [Fact]
+    public async Task NoteOnAsync_Velocity_0_5_HalvesPeakAmplitude()
+    {
+        // Square wave with flat envelope gives deterministic peak amplitude regardless of phase.
+        var squarePad = new PadAssignment
+        {
+            PadId = "test-pad",
+            RowIndex = 0,
+            ColumnIndex = 0,
+            Role = SynthSharp.Core.Layout.RowRole.MelodicA,
+            KeyBinding = "A",
+            Label = "A",
+            Waveform = WaveformType.Square,
+            FrequencyHz = 440d,
+            Envelope = new Envelope(AttackSeconds: 0, DecaySeconds: 0, SustainLevel: 1.0, ReleaseSeconds: 0),
+        };
+
+        var backend1 = new FakeAudioPlaybackBackend();
+        var engine1 = new SynthAudioEngine(backend1, maxPolyphony: 1);
+        await engine1.NoteOnAsync("v1", squarePad, velocity: 1.0f);
+
+        var backend2 = new FakeAudioPlaybackBackend();
+        var engine2 = new SynthAudioEngine(backend2, maxPolyphony: 1);
+        await engine2.NoteOnAsync("v1", squarePad, velocity: 0.5f);
+
+        const int headerLen = 44;
+        short PeakAmplitude(byte[] wav)
+        {
+            short max = 0;
+            for (var i = headerLen; i + 1 < wav.Length; i += 2)
+            {
+                var sample = (short)Math.Abs(BitConverter.ToInt16(wav, i));
+                if (sample > max) max = sample;
+            }
+            return max;
+        }
+
+        var peak1 = PeakAmplitude(backend1.Invocations[0].Payload);
+        var peak2 = PeakAmplitude(backend2.Invocations[0].Payload);
+
+        // 0.5-velocity peak should be approximately half the 1.0-velocity peak (within ±1 PCM unit).
+        Assert.InRange(peak2, (peak1 / 2) - 1, (peak1 / 2) + 1);
+    }
+
+    /// <summary>Velocity outside [0, 1] must be clamped: -0.5 → silence, 2.0 → same as 1.0.</summary>
+    [Fact]
+    public async Task NoteOnAsync_Velocity_OutOfRange_IsClamped()
+    {
+        // velocity = -0.5 must produce silence (clamped to 0).
+        var backendNeg = new FakeAudioPlaybackBackend();
+        var engineNeg = new SynthAudioEngine(backendNeg, maxPolyphony: 1);
+        await engineNeg.NoteOnAsync("v1", MakePad(releaseSeconds: 0d), velocity: -0.5f);
+
+        const int headerLen = 44;
+        var negPayload = backendNeg.Invocations[0].Payload;
+        for (var i = headerLen; i < negPayload.Length; i++)
+        {
+            Assert.Equal(0, negPayload[i]);
+        }
+
+        // velocity = 2.0 must produce same bytes as velocity = 1.0 (clamped to 1.0).
+        var backend1 = new FakeAudioPlaybackBackend();
+        var engine1 = new SynthAudioEngine(backend1, maxPolyphony: 1);
+        await engine1.NoteOnAsync("v1", MakePad(releaseSeconds: 0d), velocity: 1.0f);
+
+        var backend2 = new FakeAudioPlaybackBackend();
+        var engine2 = new SynthAudioEngine(backend2, maxPolyphony: 1);
+        await engine2.NoteOnAsync("v1", MakePad(releaseSeconds: 0d), velocity: 2.0f);
+
+        Assert.Equal(backend1.Invocations[0].Payload, backend2.Invocations[0].Payload);
     }
 }

@@ -62,6 +62,10 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
     /// <summary>Starts a sustained note for the given voice, stopping any prior note on the same voice ID.</summary>
     /// <param name="voiceId">Unique identifier for the voice slot; case-insensitive.</param>
     /// <param name="assignment">Pad assignment describing waveform, frequency, and envelope.</param>
+    /// <param name="velocity">
+    /// Linear amplitude scale in [0.0, 1.0]. Values outside this range are clamped by the renderer.
+    /// Defaults to <c>1.0f</c> so existing callers compile and behave identically.
+    /// </param>
     /// <param name="cancellationToken">Optional token; cancellation stops the sustained note immediately.</param>
     /// <returns>A completed <see cref="Task"/> — playback runs fire-and-forget on the backend.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="voiceId"/> is null, empty, or whitespace.</exception>
@@ -71,7 +75,7 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
     /// <exception cref="FileNotFoundException">
     /// Thrown when <paramref name="assignment"/> references a sample file that does not exist in the configured samples directory.
     /// </exception>
-    public Task NoteOnAsync(string voiceId, PadAssignment assignment, CancellationToken cancellationToken = default)
+    public Task NoteOnAsync(string voiceId, PadAssignment assignment, float velocity = 1.0f, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(voiceId))
         {
@@ -83,14 +87,14 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
         MemoryStream stream;
         if (!string.IsNullOrWhiteSpace(assignment.SampleFileName))
         {
-            stream = RenderSampleStream(assignment);
+            stream = RenderSampleStream(assignment, velocity);
         }
         else
         {
             var sustainEnvelope = assignment.Envelope with { ReleaseSeconds = 0d };
             stream = WavToneRenderer.RenderMonoPcm16(
                 assignment.Waveform, assignment.FrequencyHz, MaxSustainDuration, sustainEnvelope,
-                filter: assignment.Filter, lfo: assignment.Lfo);
+                filter: assignment.Filter, lfo: assignment.Lfo, velocity: velocity);
         }
 
         lock (_gate)
@@ -102,6 +106,7 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
             var voice = new ActiveVoice(
                 VoiceId: voiceId,
                 Assignment: assignment,
+                Velocity: velocity,
                 CancellationSource: voiceCts,
                 SequenceNumber: ++_voiceSequence);
 
@@ -160,11 +165,15 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
     /// <summary>Previews a pad by starting a note, waiting the requested duration, then stopping it.</summary>
     /// <param name="assignment">Pad assignment describing waveform, frequency, and envelope.</param>
     /// <param name="duration">How long to hold the note before calling <see cref="NoteOff"/>.</param>
+    /// <param name="velocity">
+    /// Linear amplitude scale in [0.0, 1.0]. Values outside this range are clamped by the renderer.
+    /// Defaults to <c>1.0f</c> so existing callers compile and behave identically.
+    /// </param>
     /// <param name="cancellationToken">Optional token; cancellation stops the preview immediately.</param>
     /// <returns>A <see cref="Task"/> that completes once the note has been stopped.</returns>
-    public async Task PlayPadAsync(PadAssignment assignment, TimeSpan duration, CancellationToken cancellationToken = default)
+    public async Task PlayPadAsync(PadAssignment assignment, TimeSpan duration, float velocity = 1.0f, CancellationToken cancellationToken = default)
     {
-        await NoteOnAsync(PreviewVoiceId, assignment, cancellationToken);
+        await NoteOnAsync(PreviewVoiceId, assignment, velocity: velocity, cancellationToken: cancellationToken);
 
         try
         {
@@ -270,7 +279,7 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
         }
     }
 
-    private MemoryStream RenderSampleStream(PadAssignment assignment)
+    private MemoryStream RenderSampleStream(PadAssignment assignment, float velocity)
     {
         if (_sampleImporter is null || _sampleExporter is null || string.IsNullOrWhiteSpace(_samplesDirectory))
         {
@@ -306,7 +315,8 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
             loopEnabled: assignment.SampleLoopEnabled,
             loopStartFrame: assignment.SampleLoopStartFrame,
             loopEndFrame: assignment.SampleLoopEndFrame,
-            maxOutputFrames: maxOutputFrames);
+            maxOutputFrames: maxOutputFrames,
+            velocity: velocity);
     }
 
     private async Task PlayReleaseTailAsync(PadAssignment assignment)
@@ -336,6 +346,7 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
     private sealed record ActiveVoice(
         string VoiceId,
         PadAssignment Assignment,
+        float Velocity,
         CancellationTokenSource CancellationSource,
         long SequenceNumber);
 }

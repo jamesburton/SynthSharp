@@ -82,6 +82,16 @@ public sealed class PerceptualRegressionTests
         GoldenAudio.AssertMatchesGolden(stream.ToArray(), "sample_ramp_loop_25_75_500.wav");
     }
 
+    /// <summary>Pins the 440 Hz sine at velocity=0.5 — amplitude should be half the full-velocity render.</summary>
+    [Fact]
+    public void Sine440Hz_FlatEnvelope_Velocity_0_5()
+    {
+        using var stream = WavToneRenderer.RenderMonoPcm16(
+            WaveformType.Sine, 440, TimeSpan.FromMilliseconds(200), FlatEnvelope,
+            filter: null, lfo: null, velocity: 0.5f);
+        GoldenAudio.AssertMatchesGolden(stream.ToArray(), "sine_440_velocity_0_5.wav");
+    }
+
     /// <summary>Builds a mono ramp sample with values rising linearly from 0 to frameCount/10000.</summary>
     /// <param name="frameCount">Number of frames to generate.</param>
     /// <param name="sampleRate">Sample rate in Hz.</param>

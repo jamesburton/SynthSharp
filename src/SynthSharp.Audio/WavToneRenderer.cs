@@ -25,6 +25,11 @@ public static class WavToneRenderer
     /// <see cref="LfoSettings.Off"/> for bypass. <see cref="LfoTarget.None"/> produces
     /// output bit-identical to passing no LFO at all.
     /// </param>
+    /// <param name="velocity">
+    /// Linear amplitude scale in [0.0, 1.0]. Applied as an input-gain stage before the filter:
+    /// the rendered sample is multiplied by <c>Math.Clamp(velocity, 0f, 1f)</c>. Defaults to
+    /// <c>1.0f</c> which is mathematically identical to the no-velocity path.
+    /// </param>
     /// <returns>A read-only <see cref="MemoryStream"/> at position 0 containing the WAV bytes.</returns>
     public static MemoryStream RenderMonoPcm16(
         WaveformType waveform,
@@ -32,7 +37,8 @@ public static class WavToneRenderer
         TimeSpan duration,
         Envelope envelope,
         FilterSettings? filter = null,
-        LfoSettings? lfo = null)
+        LfoSettings? lfo = null,
+        float velocity = 1.0f)
     {
         var sampleCount = Math.Max(1, (int)(SampleRate * duration.TotalSeconds));
         var byteCount = sampleCount * sizeof(short);
@@ -89,6 +95,10 @@ public static class WavToneRenderer
                 var ampMod = Math.Max(0d, 1d + lfoValue);
                 rendered *= ampMod;
             }
+
+            // Velocity: scale by clamped [0, 1] before the filter so velocity behaves as an
+            // input-gain stage. When velocity == 1.0f this is a no-op (1.0d multiply is exact).
+            rendered *= Math.Clamp(velocity, 0f, 1f);
 
             // Filter cutoff modulation: recreate the filter every 256 samples (~5.8 ms at 44.1 kHz).
             // Filter IIR state is lost on each recreation, which is a quality compromise accepted
