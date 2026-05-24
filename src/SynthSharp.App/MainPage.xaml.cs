@@ -152,6 +152,9 @@ public partial class MainPage : ContentPage
         LoopEnabledCheckBox.IsChecked = pad.SampleLoopEnabled;
         LoopStartEntry.Text = pad.SampleLoopStartFrame.ToString();
         LoopEndEntry.Text = pad.SampleLoopEndFrame.ToString();
+
+        TrimStartEntry.Text = pad.SampleTrimStartFrame.ToString();
+        TrimEndEntry.Text = pad.SampleTrimEndFrame.ToString();
     }
 
     private async void OnApplyPadClicked(object? sender, EventArgs e)
@@ -237,6 +240,19 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        if (!int.TryParse(TrimStartEntry.Text, out var trimStart) || trimStart < 0
+            || !int.TryParse(TrimEndEntry.Text, out var trimEnd) || trimEnd < 0)
+        {
+            SetStatus("Trim start and end must be non-negative integers (frame counts).");
+            return;
+        }
+
+        if (trimEnd > 0 && trimEnd <= trimStart)
+        {
+            SetStatus("Trim end must be greater than trim start when non-zero.");
+            return;
+        }
+
         pad.KeyBinding = key;
         pad.Label = string.IsNullOrWhiteSpace(LabelEntry.Text) ? pad.PadId : LabelEntry.Text.Trim();
         pad.FrequencyHz = frequency;
@@ -248,6 +264,8 @@ public partial class MainPage : ContentPage
         pad.SampleLoopEnabled = loopEnabled;
         pad.SampleLoopStartFrame = loopStart;
         pad.SampleLoopEndFrame = loopEnd;
+        pad.SampleTrimStartFrame = trimStart;
+        pad.SampleTrimEndFrame = trimEnd;
 
         _padTriggerRouter.Rebuild(_currentPreset.Pads);
         RefreshPadPickerItems();

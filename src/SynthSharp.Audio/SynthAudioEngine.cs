@@ -316,7 +316,9 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
             loopStartFrame: assignment.SampleLoopStartFrame,
             loopEndFrame: assignment.SampleLoopEndFrame,
             maxOutputFrames: maxOutputFrames,
-            velocity: velocity);
+            velocity: velocity,
+            trimStartFrame: assignment.SampleTrimStartFrame,
+            trimEndFrame: assignment.SampleTrimEndFrame);
     }
 
     private async Task PlayReleaseTailAsync(PadAssignment assignment)

@@ -105,4 +105,37 @@ public class PresetJsonRoundtripSampleTests
         Assert.Equal(0, pad.SampleLoopStartFrame);
         Assert.Equal(0, pad.SampleLoopEndFrame);
     }
+
+    [Fact]
+    public void PresetJsonSerializer_RoundTripsSampleTrimFields()
+    {
+        var preset = new KeyboardLayoutPreset
+        {
+            Name = "trim-preset",
+            Pads = new[]
+            {
+                new PadAssignment
+                {
+                    PadId = "pad-0",
+                    RowIndex = 0,
+                    ColumnIndex = 0,
+                    Role = RowRole.MelodicA,
+                    KeyBinding = "A",
+                    Label = "A",
+                    Waveform = WaveformType.Sine,
+                    FrequencyHz = 440d,
+                    SampleFileName = "loopable.wav",
+                    SampleTrimStartFrame = 4096,
+                    SampleTrimEndFrame = 28000,
+                },
+            },
+        };
+
+        var json = PresetJsonSerializer.Serialize(preset);
+        var deserialized = PresetJsonSerializer.Deserialize(json);
+
+        var pad = deserialized.Pads[0];
+        Assert.Equal(4096, pad.SampleTrimStartFrame);
+        Assert.Equal(28000, pad.SampleTrimEndFrame);
+    }
 }

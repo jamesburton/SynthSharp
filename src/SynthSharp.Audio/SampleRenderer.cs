@@ -36,21 +36,37 @@ public static class SampleRenderer
     /// <paramref name="maxOutputFrames"/> frames of output. The envelope is applied across the
     /// whole output (not per-loop) so attack/decay/release stay natural.
     /// </param>
-    /// <param name="loopStartFrame">Loop start frame in the source. Ignored when <paramref name="loopEnabled"/> is false.</param>
-    /// <param name="loopEndFrame">Loop end frame (exclusive) in the source; 0 means "use the source's natural end". Ignored when <paramref name="loopEnabled"/> is false.</param>
+    /// <param name="loopStartFrame">
+    /// Loop start frame within the TRIMMED region (i.e. relative to <paramref name="trimStartFrame"/>).
+    /// Ignored when <paramref name="loopEnabled"/> is false.
+    /// </param>
+    /// <param name="loopEndFrame">
+    /// Loop end frame (exclusive) within the TRIMMED region; 0 means "use the trimmed region's natural end".
+    /// Ignored when <paramref name="loopEnabled"/> is false.
+    /// </param>
     /// <param name="maxOutputFrames">
     /// Cap on the output's frame count. 0 means "use the source's natural length" (no looping
     /// extension even if <paramref name="loopEnabled"/> is true — useful for tests that don't
-    /// want a long render). Capped to the source length when looping is disabled.
+    /// want a long render). Capped to the trimmed length when looping is disabled.
     /// </param>
     /// <param name="velocity">
     /// Linear amplitude scale in [0.0, 1.0]. Applied as an input-gain stage before the filter:
     /// the rendered sample is multiplied by <c>Math.Clamp(velocity, 0f, 1f)</c>. Defaults to
     /// <c>1.0f</c> which is mathematically identical to the no-velocity path.
     /// </param>
+    /// <param name="trimStartFrame">
+    /// Trim start frame in source-sample space. Defaults to 0 (start of clip). Source frames before
+    /// this index are skipped; the trimmed region begins here. Loop bounds are interpreted within
+    /// the trimmed region (i.e. relative to this offset).
+    /// </param>
+    /// <param name="trimEndFrame">
+    /// Trim end frame in source-sample space (exclusive). 0 means "use the source's natural end".
+    /// Must be greater than <paramref name="trimStartFrame"/> when non-zero. Loop bounds are
+    /// interpreted within the trimmed region, not the untrimmed source.
+    /// </param>
     /// <returns>A PCM16 WAV MemoryStream ready for <see cref="IAudioPlaybackBackend.PlayAsync"/>.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="sample"/> or <paramref name="exporter"/> is null.</exception>
-    /// <exception cref="ArgumentException">When loop bounds are invalid (start &gt;= end with non-zero end, or negative values).</exception>
+    /// <exception cref="ArgumentException">When loop or trim bounds are invalid (negative values, or end at or before start when non-zero).</exception>
     public static MemoryStream Render(
         Sample sample,
         double gain,
@@ -62,7 +78,9 @@ public static class SampleRenderer
         int loopStartFrame = 0,
         int loopEndFrame = 0,
         int maxOutputFrames = 0,
-        float velocity = 1.0f)
+        float velocity = 1.0f,
+        int trimStartFrame = 0,
+        int trimEndFrame = 0)
     {
         ArgumentNullException.ThrowIfNull(sample);
         ArgumentNullException.ThrowIfNull(exporter);
@@ -71,8 +89,35 @@ public static class SampleRenderer
         var sampleRate = sample.Metadata.SampleRateHz;
         var channelCount = sample.Metadata.ChannelCount;
 
+        // Validate and resolve trim bounds first. The trimmed region narrows the effective source
+        // so that all subsequent loop math operates within [trimStartFrame, trimEndFrame).
+        // trimEndFrame == 0 is a sentinel meaning "use the source's natural end".
+        if (trimStartFrame < 0)
+        {
+            throw new ArgumentException($"trimStartFrame must be non-negative; got {trimStartFrame}.", nameof(trimStartFrame));
+        }
+
+        if (trimEndFrame < 0)
+        {
+            throw new ArgumentException($"trimEndFrame must be non-negative; got {trimEndFrame}.", nameof(trimEndFrame));
+        }
+
+        var effectiveTrimStart = Math.Min(trimStartFrame, frameCount);
+        var effectiveTrimEnd = trimEndFrame > 0 ? Math.Min(trimEndFrame, frameCount) : frameCount;
+
+        if (trimEndFrame > 0 && effectiveTrimEnd <= effectiveTrimStart)
+        {
+            throw new ArgumentException(
+                $"trimEndFrame ({trimEndFrame}) must be greater than trimStartFrame ({trimStartFrame}) when non-zero.",
+                nameof(trimEndFrame));
+        }
+
+        // effectiveLength is the number of frames in the trimmed region; all loop math below
+        // uses this instead of frameCount so loop bounds are relative to the trimmed region.
+        var effectiveLength = effectiveTrimEnd - effectiveTrimStart;
+
         // Resolve loop bounds and compute effective output length.
-        // loopEndFrame == 0 is a documented sentinel meaning "use the natural end of the source".
+        // loopEndFrame == 0 is a documented sentinel meaning "use the trimmed region's natural end".
         if (loopStartFrame < 0)
         {
             throw new ArgumentException($"loopStartFrame must be non-negative; got {loopStartFrame}.", nameof(loopStartFrame));
@@ -83,8 +128,8 @@ public static class SampleRenderer
             throw new ArgumentException($"loopEndFrame must be non-negative; got {loopEndFrame}.", nameof(loopEndFrame));
         }
 
-        var effectiveLoopStart = Math.Min(loopStartFrame, frameCount);
-        var effectiveLoopEnd = loopEndFrame > 0 ? Math.Min(loopEndFrame, frameCount) : frameCount;
+        var effectiveLoopStart = Math.Min(loopStartFrame, effectiveLength);
+        var effectiveLoopEnd = loopEndFrame > 0 ? Math.Min(loopEndFrame, effectiveLength) : effectiveLength;
 
         if (loopEnabled && effectiveLoopEnd <= effectiveLoopStart)
         {
@@ -93,8 +138,8 @@ public static class SampleRenderer
                 nameof(loopEndFrame));
         }
 
-        var willLoop = loopEnabled && maxOutputFrames > frameCount && effectiveLoopEnd > effectiveLoopStart;
-        var outputFrames = willLoop ? maxOutputFrames : (maxOutputFrames > 0 ? Math.Min(maxOutputFrames, frameCount) : frameCount);
+        var willLoop = loopEnabled && maxOutputFrames > effectiveLength && effectiveLoopEnd > effectiveLoopStart;
+        var outputFrames = willLoop ? maxOutputFrames : (maxOutputFrames > 0 ? Math.Min(maxOutputFrames, effectiveLength) : effectiveLength);
 
         var attackSamples = (int)(sampleRate * envelope.AttackSeconds);
         var decaySamples = (int)(sampleRate * envelope.DecaySeconds);
@@ -120,18 +165,22 @@ public static class SampleRenderer
 
             for (var i = 0; i < outputFrames; i++)
             {
-                // Resolve source frame: first play 0..effectiveLoopEnd, then cycle through
-                // [effectiveLoopStart, effectiveLoopEnd) for the remainder of the render.
-                int srcIdx;
+                // Resolve source frame within the trimmed region: first play 0..effectiveLoopEnd
+                // (in trimmed-region space), then cycle through [effectiveLoopStart, effectiveLoopEnd).
+                // srcIdxInTrimmed is in [0, effectiveLength); translate to source space by adding
+                // effectiveTrimStart so we read from the correct position in the raw channel data.
+                int srcIdxInTrimmed;
                 if (i < effectiveLoopEnd || !willLoop)
                 {
-                    srcIdx = Math.Min(i, frameCount - 1);
+                    srcIdxInTrimmed = Math.Min(i, effectiveLength - 1);
                 }
                 else
                 {
                     var loopLen = effectiveLoopEnd - effectiveLoopStart;
-                    srcIdx = effectiveLoopStart + ((i - effectiveLoopEnd) % loopLen);
+                    srcIdxInTrimmed = effectiveLoopStart + ((i - effectiveLoopEnd) % loopLen);
                 }
+
+                var srcIdx = srcIdxInTrimmed + effectiveTrimStart;
 
                 var amp = EnvelopeAmplitude(i, attackSamples, decaySamples, sustainStart, sustainEnd, releaseSamples, envelope.SustainLevel);
                 var enveloped = (float)(sample.Channels[c][srcIdx] * amp * gain);
@@ -167,8 +216,10 @@ public static class SampleRenderer
             }
         }
 
-        // When looping extends the output beyond the source's natural length, build a fresh
-        // metadata record so the Sample's invariant (channels[i].Length == FrameCount) holds.
+        // Build fresh metadata when outputFrames differs from the source's frameCount — this
+        // covers both loop extension (outputFrames > frameCount) and trim shortening
+        // (outputFrames < frameCount). The Sample invariant channels[i].Length == FrameCount
+        // must always hold.
         var shapedMetadata = outputFrames == frameCount
             ? sample.Metadata
             : sample.Metadata with

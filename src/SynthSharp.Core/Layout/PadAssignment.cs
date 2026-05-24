@@ -65,4 +65,20 @@ public sealed class PadAssignment
     /// <see cref="SampleLoopEnabled"/> is false.
     /// </summary>
     public int SampleLoopEndFrame { get; set; }
+
+    /// <summary>
+    /// Trim start frame in source-sample space. Defaults to 0 (start of clip). The renderer skips
+    /// source frames before this index, so the pad effectively starts playing at this offset.
+    /// Ignored when <see cref="SampleFileName"/> is null.
+    /// </summary>
+    public int SampleTrimStartFrame { get; set; }
+
+    /// <summary>
+    /// Trim end frame in source-sample space (exclusive). 0 means "use the clip's natural end".
+    /// Must be greater than <see cref="SampleTrimStartFrame"/> when non-zero. Ignored when
+    /// <see cref="SampleFileName"/> is null. Note: loop bounds (<see cref="SampleLoopStartFrame"/>
+    /// and <see cref="SampleLoopEndFrame"/>) are interpreted within the TRIMMED region, not the
+    /// untrimmed source.
+    /// </summary>
+    public int SampleTrimEndFrame { get; set; }
 }

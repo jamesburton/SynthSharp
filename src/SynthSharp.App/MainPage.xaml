@@ -65,6 +65,13 @@
                         <Entry Grid.Row="2" Grid.Column="1" x:Name="LoopEndEntry" Placeholder="0" />
                     </Grid>
 
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                        <Label Grid.Row="0" Text="Trim start (frames)" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="0" Grid.Column="1" x:Name="TrimStartEntry" Placeholder="0" />
+                        <Label Grid.Row="1" Text="Trim end (frames; 0 = end)" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="1" Grid.Column="1" x:Name="TrimEndEntry" Placeholder="0" />
+                    </Grid>
+
                     <HorizontalStackLayout Spacing="8">
                         <Button Text="Apply to pad" Clicked="OnApplyPadClicked" />
                         <Button Text="Play selected" Clicked="OnPlaySelectedClicked" />
