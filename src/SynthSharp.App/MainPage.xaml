@@ -38,6 +38,24 @@
                         <Label Grid.Row="9" Text="Gain (0-2)" VerticalTextAlignment="Center" />
                         <Entry Grid.Row="9" Grid.Column="1" x:Name="GainEntry" Placeholder="1.0" />
                     </Grid>
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                        <Label Grid.Row="0" Text="Filter type" VerticalTextAlignment="Center" />
+                        <Picker Grid.Row="0" Grid.Column="1" x:Name="FilterTypePicker" />
+                        <Label Grid.Row="1" Text="Filter cutoff (Hz)" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="1" Grid.Column="1" x:Name="FilterCutoffEntry" Placeholder="1000" />
+                        <Label Grid.Row="2" Text="Filter Q" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="2" Grid.Column="1" x:Name="FilterResonanceEntry" Placeholder="0.707" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                        <Label Grid.Row="0" Text="LFO target" VerticalTextAlignment="Center" />
+                        <Picker Grid.Row="0" Grid.Column="1" x:Name="LfoTargetPicker" />
+                        <Label Grid.Row="1" Text="LFO rate (Hz)" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="1" Grid.Column="1" x:Name="LfoRateEntry" Placeholder="4.0" />
+                        <Label Grid.Row="2" Text="LFO depth (0-1)" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="2" Grid.Column="1" x:Name="LfoDepthEntry" Placeholder="0.5" />
+                    </Grid>
+
                     <HorizontalStackLayout Spacing="8">
                         <Button Text="Apply to pad" Clicked="OnApplyPadClicked" />
                         <Button Text="Play selected" Clicked="OnPlaySelectedClicked" />

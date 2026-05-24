@@ -50,6 +50,8 @@ public partial class MainPage : ContentPage
         InitializeComponent();
 
         WaveformPicker.ItemsSource = Enum.GetNames<WaveformType>();
+        FilterTypePicker.ItemsSource = Enum.GetNames<FilterType>();
+        LfoTargetPicker.ItemsSource = Enum.GetNames<LfoTarget>();
         PadPicker.ItemsSource = _currentPreset.Pads
             .OrderBy(x => x.RowIndex)
             .ThenBy(x => x.ColumnIndex)
@@ -115,6 +117,14 @@ public partial class MainPage : ContentPage
         ReleaseEntry.Text = pad.Envelope.ReleaseSeconds.ToString("0.###");
         SampleFileLabel.Text = string.IsNullOrWhiteSpace(pad.SampleFileName) ? "(none)" : pad.SampleFileName;
         GainEntry.Text = pad.SampleGain.ToString("0.###");
+
+        FilterTypePicker.SelectedItem = pad.Filter.Type.ToString();
+        FilterCutoffEntry.Text = pad.Filter.CutoffHz.ToString("0.##");
+        FilterResonanceEntry.Text = pad.Filter.Resonance.ToString("0.###");
+
+        LfoTargetPicker.SelectedItem = pad.Lfo.Target.ToString();
+        LfoRateEntry.Text = pad.Lfo.RateHz.ToString("0.##");
+        LfoDepthEntry.Text = pad.Lfo.Depth.ToString("0.###");
     }
 
     private async void OnApplyPadClicked(object? sender, EventArgs e)
@@ -160,12 +170,40 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        if (!Enum.TryParse<FilterType>(FilterTypePicker.SelectedItem?.ToString(), ignoreCase: true, out var filterType))
+        {
+            SetStatus("Pick a filter type.");
+            return;
+        }
+
+        if (!TryParseInRange(FilterCutoffEntry.Text, 20d, 22050d, out var filterCutoff)
+            || !TryParseInRange(FilterResonanceEntry.Text, 0.1d, 10d, out var filterResonance))
+        {
+            SetStatus("Filter cutoff must be 20..22050 Hz and Q must be 0.1..10.");
+            return;
+        }
+
+        if (!Enum.TryParse<LfoTarget>(LfoTargetPicker.SelectedItem?.ToString(), ignoreCase: true, out var lfoTarget))
+        {
+            SetStatus("Pick an LFO target.");
+            return;
+        }
+
+        if (!TryParseInRange(LfoRateEntry.Text, 0.01d, 50d, out var lfoRate)
+            || !TryParseInRange(LfoDepthEntry.Text, 0d, 1d, out var lfoDepth))
+        {
+            SetStatus("LFO rate must be 0.01..50 Hz and depth must be 0..1.");
+            return;
+        }
+
         pad.KeyBinding = key;
         pad.Label = string.IsNullOrWhiteSpace(LabelEntry.Text) ? pad.PadId : LabelEntry.Text.Trim();
         pad.FrequencyHz = frequency;
         pad.Waveform = waveform;
         pad.Envelope = new Envelope(attackSeconds, decaySeconds, sustainLevel, releaseSeconds);
         pad.SampleGain = sampleGain;
+        pad.Filter = new FilterSettings(filterType, filterCutoff, filterResonance);
+        pad.Lfo = new LfoSettings(lfoTarget, lfoRate, lfoDepth);
 
         _padTriggerRouter.Rebuild(_currentPreset.Pads);
         RefreshPadPickerItems();
