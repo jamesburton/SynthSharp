@@ -138,4 +138,33 @@ public class PresetJsonRoundtripSampleTests
         Assert.Equal(4096, pad.SampleTrimStartFrame);
         Assert.Equal(28000, pad.SampleTrimEndFrame);
     }
+
+    [Fact]
+    public void PresetJsonSerializer_RoundTripsMaxPolyphony()
+    {
+        var preset = new KeyboardLayoutPreset
+        {
+            Name = "polyphony-preset",
+            Pads = new[]
+            {
+                new PadAssignment
+                {
+                    PadId = "pad-0",
+                    RowIndex = 0,
+                    ColumnIndex = 0,
+                    Role = RowRole.MelodicA,
+                    KeyBinding = "A",
+                    Label = "A",
+                    Waveform = WaveformType.Sine,
+                    FrequencyHz = 440d,
+                    MaxPolyphony = 3,
+                },
+            },
+        };
+
+        var json = PresetJsonSerializer.Serialize(preset);
+        var deserialized = PresetJsonSerializer.Deserialize(json);
+
+        Assert.Equal(3, deserialized.Pads[0].MaxPolyphony);
+    }
 }

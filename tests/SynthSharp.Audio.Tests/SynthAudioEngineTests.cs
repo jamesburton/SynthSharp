@@ -375,6 +375,213 @@ public sealed class SynthAudioEngineTests
     }
 
     // ---------------------------------------------------------------------------
+    // Per-pad polyphony tests
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// A pad with MaxPolyphony=1 should cancel the previous voice on the same pad before starting a new one,
+    /// leaving only the most-recently-triggered voice active.
+    /// </summary>
+    [Fact]
+    public async Task NoteOnAsync_PerPadPolyphony_ReplacesOnSamePad()
+    {
+        var backend = new FakeAudioPlaybackBackend();
+        var engine = new SynthAudioEngine(backend, maxPolyphony: 10);
+
+        var pad = new PadAssignment
+        {
+            PadId = "kick",
+            RowIndex = 0,
+            ColumnIndex = 0,
+            Role = RowRole.MelodicA,
+            KeyBinding = "A",
+            Label = "Kick",
+            Waveform = WaveformType.Sine,
+            FrequencyHz = 60d,
+            MaxPolyphony = 1,
+        };
+
+        await engine.NoteOnAsync("v1", pad);
+        await engine.NoteOnAsync("v2", pad);
+        await engine.NoteOnAsync("v3", pad);
+
+        await Task.Delay(30);
+
+        // Three backend invocations total.
+        Assert.Equal(3, backend.Invocations.Count);
+
+        // First two were evicted by per-pad cap.
+        Assert.True(backend.Invocations[0].WasCancelled);
+        Assert.True(backend.Invocations[1].WasCancelled);
+
+        // Third is still active.
+        Assert.False(backend.Invocations[2].WasCancelled);
+    }
+
+    /// <summary>
+    /// Per-pad eviction on pad A must not cancel voices belonging to pad B.
+    /// </summary>
+    [Fact]
+    public async Task NoteOnAsync_PerPadPolyphony_DoesNotEvictOtherPads()
+    {
+        var backend = new FakeAudioPlaybackBackend();
+        var engine = new SynthAudioEngine(backend, maxPolyphony: 10);
+
+        var padA = new PadAssignment
+        {
+            PadId = "pad-a",
+            RowIndex = 0,
+            ColumnIndex = 0,
+            Role = RowRole.MelodicA,
+            KeyBinding = "A",
+            Label = "A",
+            Waveform = WaveformType.Sine,
+            FrequencyHz = 440d,
+            MaxPolyphony = 1,
+        };
+
+        var padB = new PadAssignment
+        {
+            PadId = "pad-b",
+            RowIndex = 0,
+            ColumnIndex = 1,
+            Role = RowRole.MelodicA,
+            KeyBinding = "B",
+            Label = "B",
+            Waveform = WaveformType.Sine,
+            FrequencyHz = 880d,
+            MaxPolyphony = 0,
+        };
+
+        // A1 then B1 (different pads), then A2 (re-triggers pad A — should evict A1 only).
+        await engine.NoteOnAsync("v-a1", padA);
+        await engine.NoteOnAsync("v-b1", padB);
+        await engine.NoteOnAsync("v-a2", padA);
+
+        await Task.Delay(30);
+
+        Assert.Equal(3, backend.Invocations.Count);
+
+        // A1 (invocation[0]) cancelled by per-pad eviction.
+        Assert.True(backend.Invocations[0].WasCancelled);
+
+        // B1 (invocation[1]) must still be active — pad B was not touched.
+        Assert.False(backend.Invocations[1].WasCancelled);
+
+        // A2 (invocation[2]) still active.
+        Assert.False(backend.Invocations[2].WasCancelled);
+    }
+
+    /// <summary>
+    /// A pad with MaxPolyphony=3 should allow up to 3 simultaneous voices; the 4th triggers eviction of the oldest.
+    /// </summary>
+    [Fact]
+    public async Task NoteOnAsync_PerPadPolyphony_AllowsUpToLimit()
+    {
+        var backend = new FakeAudioPlaybackBackend();
+        var engine = new SynthAudioEngine(backend, maxPolyphony: 10);
+
+        var pad = new PadAssignment
+        {
+            PadId = "chord-pad",
+            RowIndex = 0,
+            ColumnIndex = 0,
+            Role = RowRole.MelodicA,
+            KeyBinding = "A",
+            Label = "Chord",
+            Waveform = WaveformType.Sine,
+            FrequencyHz = 440d,
+            MaxPolyphony = 3,
+        };
+
+        await engine.NoteOnAsync("v1", pad);
+        await engine.NoteOnAsync("v2", pad);
+        await engine.NoteOnAsync("v3", pad);
+        await engine.NoteOnAsync("v4", pad); // triggers per-pad eviction of v1
+
+        await Task.Delay(30);
+
+        Assert.Equal(4, backend.Invocations.Count);
+
+        // First voice evicted when v4 was added.
+        Assert.True(backend.Invocations[0].WasCancelled);
+
+        // v2, v3, v4 are still active.
+        Assert.False(backend.Invocations[1].WasCancelled);
+        Assert.False(backend.Invocations[2].WasCancelled);
+        Assert.False(backend.Invocations[3].WasCancelled);
+    }
+
+    /// <summary>
+    /// The engine-wide cap must still evict voices even when the per-pad cap would allow more.
+    /// </summary>
+    [Fact]
+    public async Task NoteOnAsync_EngineWideCap_StillApplies()
+    {
+        var backend = new FakeAudioPlaybackBackend();
+        var engine = new SynthAudioEngine(backend, maxPolyphony: 4);
+
+        var pad = new PadAssignment
+        {
+            PadId = "synth-pad",
+            RowIndex = 0,
+            ColumnIndex = 0,
+            Role = RowRole.MelodicA,
+            KeyBinding = "A",
+            Label = "Synth",
+            Waveform = WaveformType.Sine,
+            FrequencyHz = 440d,
+            MaxPolyphony = 10,
+        };
+
+        await engine.NoteOnAsync("v1", pad);
+        await engine.NoteOnAsync("v2", pad);
+        await engine.NoteOnAsync("v3", pad);
+        await engine.NoteOnAsync("v4", pad);
+        await engine.NoteOnAsync("v5", pad); // engine-wide eviction of v1
+
+        await Task.Delay(30);
+
+        Assert.Equal(5, backend.Invocations.Count);
+
+        // First voice evicted by engine-wide cap.
+        Assert.True(backend.Invocations[0].WasCancelled);
+
+        // 4 remaining voices are active.
+        Assert.False(backend.Invocations[1].WasCancelled);
+        Assert.False(backend.Invocations[2].WasCancelled);
+        Assert.False(backend.Invocations[3].WasCancelled);
+        Assert.False(backend.Invocations[4].WasCancelled);
+    }
+
+    /// <summary>
+    /// MaxPolyphony=0 must fall back to engine-wide eviction only, preserving existing behaviour.
+    /// </summary>
+    [Fact]
+    public async Task NoteOnAsync_MaxPolyphony0_FallsBackToEngineWide()
+    {
+        var backend = new FakeAudioPlaybackBackend();
+        var engine = new SynthAudioEngine(backend, maxPolyphony: 2);
+
+        var pad = MakePad(releaseSeconds: 0d);
+
+        await engine.NoteOnAsync("v1", pad);
+        await engine.NoteOnAsync("v2", pad);
+        await engine.NoteOnAsync("v3", pad); // engine-wide eviction of v1
+
+        await Task.Delay(30);
+
+        Assert.Equal(3, backend.Invocations.Count);
+
+        // First evicted by engine-wide cap.
+        Assert.True(backend.Invocations[0].WasCancelled);
+
+        // v2 and v3 still active.
+        Assert.False(backend.Invocations[1].WasCancelled);
+        Assert.False(backend.Invocations[2].WasCancelled);
+    }
+
+    // ---------------------------------------------------------------------------
     // Sample playback tests
     // ---------------------------------------------------------------------------
 

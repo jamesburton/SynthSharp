@@ -81,4 +81,12 @@ public sealed class PadAssignment
     /// untrimmed source.
     /// </summary>
     public int SampleTrimEndFrame { get; set; }
+
+    /// <summary>
+    /// Per-pad polyphony limit. 0 (default) means "use the engine-wide cap configured at construction".
+    /// A positive value enforces that at most N voices from this pad are active simultaneously; when a
+    /// new NoteOn would exceed the cap, the oldest voice WITH THIS PAD ID is evicted (other pads are
+    /// unaffected). The engine-wide cap still applies as an absolute ceiling.
+    /// </summary>
+    public int MaxPolyphony { get; set; }
 }

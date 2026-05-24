@@ -100,7 +100,7 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
         lock (_gate)
         {
             StopVoiceNoLock(voiceId);
-            EnsureVoiceCapacityNoLock();
+            EnsureVoiceCapacityNoLock(assignment.PadId, assignment.MaxPolyphony);
 
             var voiceCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var voice = new ActiveVoice(
@@ -219,8 +219,22 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
         }
     }
 
-    private void EnsureVoiceCapacityNoLock()
+    private void EnsureVoiceCapacityNoLock(string newPadId, int padMaxPolyphony)
     {
+        // Per-pad cap: evict the oldest voice ON THIS PAD until count < limit.
+        if (padMaxPolyphony > 0)
+        {
+            while (CountVoicesOnPadNoLock(newPadId) >= padMaxPolyphony)
+            {
+                var oldestForPad = _activeVoices.Values
+                    .Where(v => string.Equals(v.Assignment.PadId, newPadId, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(v => v.SequenceNumber)
+                    .First();
+                StopVoiceNoLock(oldestForPad.VoiceId);
+            }
+        }
+
+        // Engine-wide cap: evict oldest voice from ANY pad until count < limit.
         while (_activeVoices.Count >= _maxPolyphony)
         {
             var oldestVoiceId = _activeVoices
@@ -229,6 +243,20 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
                 .Key;
             StopVoiceNoLock(oldestVoiceId);
         }
+    }
+
+    private int CountVoicesOnPadNoLock(string padId)
+    {
+        var count = 0;
+        foreach (var voice in _activeVoices.Values)
+        {
+            if (string.Equals(voice.Assignment.PadId, padId, StringComparison.OrdinalIgnoreCase))
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private void StopVoiceNoLock(string voiceId)

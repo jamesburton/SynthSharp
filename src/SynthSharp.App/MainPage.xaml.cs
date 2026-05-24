@@ -155,6 +155,7 @@ public partial class MainPage : ContentPage
 
         TrimStartEntry.Text = pad.SampleTrimStartFrame.ToString();
         TrimEndEntry.Text = pad.SampleTrimEndFrame.ToString();
+        PolyphonyEntry.Text = pad.MaxPolyphony.ToString();
     }
 
     private async void OnApplyPadClicked(object? sender, EventArgs e)
@@ -253,6 +254,12 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        if (!int.TryParse(PolyphonyEntry.Text, out var maxPolyphony) || maxPolyphony < 0)
+        {
+            SetStatus("Polyphony must be a non-negative integer (0 = use engine-wide cap).");
+            return;
+        }
+
         pad.KeyBinding = key;
         pad.Label = string.IsNullOrWhiteSpace(LabelEntry.Text) ? pad.PadId : LabelEntry.Text.Trim();
         pad.FrequencyHz = frequency;
@@ -266,6 +273,7 @@ public partial class MainPage : ContentPage
         pad.SampleLoopEndFrame = loopEnd;
         pad.SampleTrimStartFrame = trimStart;
         pad.SampleTrimEndFrame = trimEnd;
+        pad.MaxPolyphony = maxPolyphony;
 
         _padTriggerRouter.Rebuild(_currentPreset.Pads);
         RefreshPadPickerItems();

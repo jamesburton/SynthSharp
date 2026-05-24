@@ -16,7 +16,7 @@
                     <Picker x:Name="PadPicker"
                             Title="Select pad"
                             SelectedIndexChanged="OnPadSelectionChanged" />
-                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
                         <Label Grid.Row="0" Text="Label" VerticalTextAlignment="Center" />
                         <Entry Grid.Row="0" Grid.Column="1" x:Name="LabelEntry" Placeholder="Kick / Lead A1 / etc." />
                         <Label Grid.Row="1" Text="Key" VerticalTextAlignment="Center" />
@@ -37,6 +37,8 @@
                         <Label Grid.Row="8" Grid.Column="1" x:Name="SampleFileLabel" Text="(none)" VerticalTextAlignment="Center" />
                         <Label Grid.Row="9" Text="Gain (0-2)" VerticalTextAlignment="Center" />
                         <Entry Grid.Row="9" Grid.Column="1" x:Name="GainEntry" Placeholder="1.0" />
+                        <Label Grid.Row="10" Text="Polyphony (0=engine)" VerticalTextAlignment="Center" />
+                        <Entry Grid.Row="10" Grid.Column="1" x:Name="PolyphonyEntry" Placeholder="0" />
                     </Grid>
                     <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
                         <Label Grid.Row="0" Text="Filter type" VerticalTextAlignment="Center" />
