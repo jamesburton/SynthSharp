@@ -110,4 +110,44 @@ public sealed class PerceptualRegressionTests
             ImportedAt: DateTimeOffset.UtcNow);
         return new Sample(metadata, new[] { channel });
     }
+
+    [Fact]
+    public void Sine440Hz_PitchShifted_Up7Semitones()
+    {
+        // PitchShiftDeterminismTests confirmed the phase vocoder produces bit-identical output
+        // for the same input within a single process. This golden pins the byte output so any
+        // future NWaves bump or platform-floating-point change that silently alters pitch-shifted
+        // audio will be caught immediately.
+        // If this test fails after a CI run on a different runner, the FFT path in NWaves is
+        // platform-non-deterministic — revert the golden and document in PLANS.md.
+        var source = MakeSineSampleForShifter(440, 0.25);
+        var shifted = new NWavesPitchShifter().Shift(source, semitones: 7);
+
+        using var stream = new MemoryStream();
+        new WavSampleExporter().Export(shifted, stream);
+
+        GoldenAudio.AssertMatchesGolden(stream.ToArray(), "sine_440_pitchshift_up7.wav");
+    }
+
+    private static Sample MakeSineSampleForShifter(double freqHz, double durationSeconds, int sampleRate = 44100)
+    {
+        var frameCount = (int)(sampleRate * durationSeconds);
+        var channel = new float[frameCount];
+        for (var f = 0; f < frameCount; f++)
+        {
+            channel[f] = (float)Math.Sin(2 * Math.PI * freqHz * (f / (double)sampleRate));
+        }
+
+        var metadata = new SampleMetadata(
+            Name: "sine-for-shift",
+            ChannelCount: 1,
+            SampleRateHz: sampleRate,
+            FrameCount: frameCount,
+            Duration: TimeSpan.FromSeconds(durationSeconds),
+            SourceBitsPerSample: 32,
+            SourcePath: null,
+            ImportedAt: DateTimeOffset.UtcNow);
+
+        return new Sample(metadata, new[] { channel });
+    }
 }

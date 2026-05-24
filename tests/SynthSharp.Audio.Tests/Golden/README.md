@@ -35,9 +35,18 @@ change has altered the output — that may be intentional or unintentional.
 
 ## What's NOT covered
 
-- **`WaveformType.Noise`** — uses `Random.Shared`; non-deterministic.
-- **`NWavesPitchShifter`** — phase-vocoder output can vary by a few PCM
-  values across builds (NWaves internal state caches).
+- **`WaveformType.Noise`** — uses `Random.Shared`; non-deterministic by design.
+  Tested elsewhere via RMS / range assertions that don't require byte equality.
 
-Both are tested elsewhere via RMS / detected-pitch assertions that don't
-require byte equality.
+## Notes on phase-vocoder pitch shifting
+
+The original Phase 4 documentation claimed `NWavesPitchShifter` was excluded from
+this harness because phase-vocoder output "varies by a few PCM values across
+builds." `PitchShiftDeterminismTests` empirically disproves that for the
+same-process / same-platform case: a fresh `PitchShiftEffect` per call produces
+bit-identical output across repeated invocations.
+
+`sine_440_pitchshift_up7.wav` therefore pins the pitch-shift path. If a future
+CI run on a different platform produces drift, the FFT inside NWaves is
+platform-non-deterministic — revert that one golden and document the platform
+boundary.

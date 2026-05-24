@@ -106,7 +106,18 @@ The project ships:
 ### Beyond v1.0 — still open
 
 - **macOS MAUI build with notarization** — needs Apple Developer Program enrolment + cert plumbing in `release.yml`. Workflow is scaffolded as a commented-out signing block; macOS-side equivalent not yet drafted.
-- **Per-sample trim controls** — start/end offsets on imported samples (currently always plays from frame 0 to natural end or loop bounds).
-- **Per-event velocity routing** — `PatternEvent.Velocity` is captured during recording and from MIDI but the engine path uses 1.0 throughout.
 - **Sample-aware perceptual goldens** — current goldens use synthetic ramp samples; could pin against real instrument samples once a small curated WAV fixture lives under `tests/`.
-- **Phase-vocoder pitch-shift determinism** — `NWavesPitchShifter` is excluded from the perceptual harness because its internal state varies slightly across runs. Worth investigating whether the variance can be eliminated or bounded.
+
+### Beyond v1.0 — closed since v1.5.0
+
+- ✅ **Per-pad sample looping** (v1.1.0)
+- ✅ **Multi-track patterns** (v1.2.0)
+- ✅ **Low-latency Windows audio** — WASAPI via NAudio (v1.3.0)
+- ✅ **MIDI input** — DryWetMIDI device discovery + per-pad `MidiNote` routing (v1.4.0)
+- ✅ **Perceptual audio regression harness** — `GoldenAudio` MAE comparison (v1.5.0)
+- ✅ **Per-event velocity routing** (v1.6.0)
+- ✅ **Per-pad sample trim** start / end frames (v1.7.0)
+- ✅ **Per-pad polyphony** limit (v1.8.0)
+- ✅ **Sample waveform visualisation** with trim + loop overlays (v1.9.0)
+- ✅ **Keyboard focus polish** — text inputs no longer trigger pads (v1.10.0)
+- ✅ **Phase-vocoder determinism** investigation — `NWavesPitchShifter` confirmed deterministic within a process; golden test added (v1.11.0)
