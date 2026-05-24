@@ -60,14 +60,19 @@
 - Tempo and StepsPerBar are metadata only — neither the recorder nor the player quantises to the grid. Recorded timestamps reflect the user's actual key cadence to millisecond precision.
 - No multi-track / layered clips, no per-event velocity wiring (Velocity is captured but the engine path uses 1.0 throughout).
 - Pattern playback fires through the same `MainThread.InvokeOnMainThreadAsync` path as live triggers, so very high-density patterns (many events per 10 ms) may glitch.
+- **Sound editor (Phase 7):** Per-pad filter and LFO. `FilterType` enum (None / LowPass / HighPass / BandPass) + `FilterSettings(Type, CutoffHz, Resonance)` in `SynthSharp.Core.Audio` with NWaves BiQuad implementation in `SynthSharp.Audio.AudioFilters`. `LfoTarget` enum (None / Amplitude / Pitch / FilterCutoff) + `LfoSettings(Target, RateHz, Depth)` + pure-math `Lfo.EvaluateSine`. Both renderers (`WavToneRenderer`, `SampleRenderer`) accept optional filter + LFO; engine threads `assignment.Filter` and `assignment.Lfo` through on every NoteOn. Pitch LFO uses an incremental phase accumulator to preserve bit-identical output for non-Pitch and Off paths. MAUI pad editor exposes filter type picker + cutoff/Q entries and LFO target picker + rate/depth entries. Preset JSON round-trips both. 27+ new tests across Core + Audio.
+
+### Known limitations (Phase 7)
+
+- Single LFO per pad; no LFO-to-LFO or envelope-to-LFO modulation.
+- FilterCutoff LFO re-creates the BiQuad filter every 256 samples (~5.8 ms at 44.1 kHz) — coefficients change instantly rather than smoothly, which can introduce subtle clicks at extreme depths.
+- Pitch LFO on sample pads is intentionally a no-op (would require per-chunk resampling — beyond MVP scope).
+- No envelope-to-filter routing (the filter cutoff is static unless an LFO modulates it).
+- BiQuad filter Q parameter affects the resonance peak but is not separately exposed as a "drive" or saturation control.
 
 ## Next planned phases
 
-1. **Sound editor**
-   - Add richer oscillator/envelope controls.
-   - Add filter/LFO primitives.
-
-2. **Packaging and distribution hardening**
+1. **Packaging and distribution hardening**
    - Add signing/notarization flows for additional MAUI platform artifacts.
    - Expand release matrices (additional RIDs/architectures).
    - Add smoke tests for `dnx` + global-tool install paths in CI.
