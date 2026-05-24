@@ -51,18 +51,23 @@
 - No per-channel pan or stereo width controls.
 - ADSR envelope is applied as a multiplier across the sample's frames. For percussion this is fine; for sustained instrument samples you may want envelope = (0, 0, 1, 0) to avoid amplitude shaping on top of the source.
 - `MainPage.GetSamplesDirectory()` is the single source of truth — moving the AppData location, e.g. via a roaming profile change, would orphan existing sample references in saved presets.
+- **Track editor foundation (Phase 6):** `SynthSharp.Core.Patterns` namespace introduces `PatternEvent` (PadId, TimeOffsetMs, Velocity), `PatternClip` (Name, TempoBpm, StepsPerBar, LengthMs, events), `IPatternRecorder` + `DefaultPatternRecorder` (Stopwatch-based, lock-protected state), and `IPatternPlayer` + `DefaultPatternPlayer` (orders events by TimeOffsetMs, fires a caller-supplied `Func<PatternEvent, Task>` per event, holds remaining LengthMs when set, honours cancellation between events). MAUI pad editor now has a Pattern panel — Record / Play / Stop / Clear — and both keyboard input and on-screen pad presses feed the same clip while recording. 15 new Core tests cover ordering, cancellation, timing, length-honouring, and null guards.
+
+### Known limitations (Phase 6)
+
+- Single in-memory clip per session — no save/load of patterns, no clip library, no loop-on-end.
+- `PatternEvent` carries no duration: pattern playback uses a fixed 180 ms hold-then-NoteOff per event, which is fine for percussion and most synth voices but cuts off sustained-sample loops early.
+- Tempo and StepsPerBar are metadata only — neither the recorder nor the player quantises to the grid. Recorded timestamps reflect the user's actual key cadence to millisecond precision.
+- No multi-track / layered clips, no per-event velocity wiring (Velocity is captured but the engine path uses 1.0 throughout).
+- Pattern playback fires through the same `MainThread.InvokeOnMainThreadAsync` path as live triggers, so very high-density patterns (many events per 10 ms) may glitch.
 
 ## Next planned phases
 
-1. **Track editor foundation**
-   - Introduce timeline model and bar/step grid.
-   - Record triggered events into pattern clips.
-
-2. **Sound editor**
+1. **Sound editor**
    - Add richer oscillator/envelope controls.
    - Add filter/LFO primitives.
 
-3. **Packaging and distribution hardening**
+2. **Packaging and distribution hardening**
    - Add signing/notarization flows for additional MAUI platform artifacts.
    - Expand release matrices (additional RIDs/architectures).
    - Add smoke tests for `dnx` + global-tool install paths in CI.
