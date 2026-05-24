@@ -83,20 +83,30 @@
 
 ## Initial roadmap complete
 
-All eight phases of the initial SynthSharp roadmap are now in `Completed baseline`. The project ships:
+All eight phases of the initial SynthSharp roadmap landed in v1.0.0. Subsequent v1.x releases delivered the "Beyond v1.0" wishlist that grew out of usage.
 
-- A playable Windows MAUI desktop app (zip + portable launcher .exe) with four configurable pad rows, per-pad waveform/envelope/filter/LFO, sample import and per-pad gain, pattern record + playback, preset save/load.
-- A cross-platform CLI tool (`SynthSharp.Tool`) for tone rendering and preset bootstrap via `dnx` or `dotnet tool install`, published for six RIDs.
+The project ships:
+
+- A playable Windows MAUI desktop app (zip; extract and run `SynthSharp.App.exe` from inside the folder) with four configurable pad rows, per-pad waveform/envelope/filter/LFO, sample import + per-pad gain + sample looping, multi-track pattern record + playback, preset save/load, and MIDI hardware input.
+- A cross-platform CLI tool (`SynthSharp.Tool`) for tone rendering and preset bootstrap via `dnx` or `dotnet tool install`, published for six RIDs (linux/win/osx × x64/arm64).
 - Four NuGet packages (`SynthSharp.Core`, `SynthSharp.Audio`, `SynthSharp.Input`, `SynthSharp.Tool`) exposing the engine + abstractions for downstream integration.
-- A CI/release pipeline that runs tests, packs NuGets, builds tool binaries for six RIDs, builds the Windows MAUI app + portable launcher, and smoke-tests the published tool end-to-end on three operating systems.
+- A CI/release pipeline that runs tests, packs NuGets, builds tool binaries for six RIDs, builds the Windows MAUI app, and smoke-tests the published tool end-to-end on three operating systems.
 
-### Beyond the initial roadmap
+### Beyond v1.0 — delivered
 
-Ideas worth picking up next (not on the original eight-phase plan):
+| Version | Feature |
+|---|---|
+| v1.0.2 | Bumped GitHub Actions to Node.js 24 |
+| v1.1.0 | Per-pad sample looping (`SampleLoopEnabled` + start/end frames; SampleRenderer cycles loop region after first pass) |
+| v1.2.0 | Multi-track patterns (`PatternTrack` + `PatternSet` + `IPatternSetPlayer` running tracks in parallel with mute/solo) |
+| v1.3.0 | Low-latency WASAPI audio backend on Windows via NAudio (replaces Plugin.Maui.Audio MediaPlayer on the Windows TFM only); broken standalone .exe artifact dropped from releases |
+| v1.4.0 | MIDI input via DryWetMIDI (Windows); new `IMidiInputSource` abstraction + `PadAssignment.MidiNote` routing + MAUI device picker UI |
+| v1.5.0 | Perceptual audio regression harness: `GoldenAudio.AssertMatchesGolden` compares rendered WAVs against committed golden files via normalised PCM16 MAE; 8 golden tests covering the deterministic DSP paths |
 
-- **Looping samples and per-sample trim controls** — currently samples play once per NoteOn through their full length.
-- **Multi-track patterns** — extend the recorder/player to layer multiple clips with independent tempos and loop points.
-- **macOS MAUI build with notarization** — needs Apple Developer cert plumbing.
-- **Real-time / low-latency audio output** — current Plugin.Maui.Audio path adds a perceptible warmup; switching to WASAPI / AudioGraph on Windows would tighten latency for performance use.
-- **MIDI input** — current input is computer keyboard only; MIDI controllers would unlock a much wider performance surface.
-- **Audible quality benchmarks** — automated regression tests that compare rendered WAVs against golden reference files via a perceptual hash, so DSP changes don't silently degrade output.
+### Beyond v1.0 — still open
+
+- **macOS MAUI build with notarization** — needs Apple Developer Program enrolment + cert plumbing in `release.yml`. Workflow is scaffolded as a commented-out signing block; macOS-side equivalent not yet drafted.
+- **Per-sample trim controls** — start/end offsets on imported samples (currently always plays from frame 0 to natural end or loop bounds).
+- **Per-event velocity routing** — `PatternEvent.Velocity` is captured during recording and from MIDI but the engine path uses 1.0 throughout.
+- **Sample-aware perceptual goldens** — current goldens use synthetic ramp samples; could pin against real instrument samples once a small curated WAV fixture lives under `tests/`.
+- **Phase-vocoder pitch-shift determinism** — `NWavesPitchShifter` is excluded from the perceptual harness because its internal state varies slightly across runs. Worth investigating whether the variance can be eliminated or bounded.
