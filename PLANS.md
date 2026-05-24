@@ -69,10 +69,34 @@
 - Pitch LFO on sample pads is intentionally a no-op (would require per-chunk resampling — beyond MVP scope).
 - No envelope-to-filter routing (the filter cutoff is static unless an LFO modulates it).
 - BiQuad filter Q parameter affects the resonance peak but is not separately exposed as a "drive" or saturation control.
+- **Packaging and distribution hardening (Phase 8):** `publish-tool-binaries` matrix expanded to six RIDs (linux-x64, linux-arm64, win-x64, win-arm64, osx-x64, osx-arm64). New `smoke-test-tool` job runs after `publish-nuget` on linux/windows/macos-latest — waits 60s for NuGet propagation, installs the just-published `SynthSharp.Tool` globally, runs it to render a 100 ms tone, asserts the WAV is at least 1 KB. Windows path also tries the `dnx SynthSharp.Tool` invocation with `continue-on-error: true`. Windows MAUI publish now exports a portable `.exe` alongside the zip and both ship in the GitHub release. Authenticode signing for Windows MAUI binaries is scaffolded as a commented-out step — enable by setting `WINDOWS_CERT_PFX_BASE64` and `WINDOWS_CERT_PASSWORD` repository secrets. README rewritten around the `dnx`-first quickstart with a "What's in this release" summary of user-facing features.
 
-## Next planned phases
+### Known limitations (Phase 8)
 
-1. **Packaging and distribution hardening**
-   - Add signing/notarization flows for additional MAUI platform artifacts.
-   - Expand release matrices (additional RIDs/architectures).
-   - Add smoke tests for `dnx` + global-tool install paths in CI.
+- Authenticode signing is scaffolded but **not active** — releases ship unsigned until certs are added as repo secrets. Windows SmartScreen will warn on first run.
+- macOS notarization is not scaffolded yet — there is no `publish-maui-macos` job. A macOS MAUI build with notarization would need an Apple Developer Program enrolment (annual fee) and additional secret plumbing.
+- Smoke tests depend on NuGet propagation timing — the 60s sleep is a heuristic; occasional flake under heavy NuGet load is possible. Re-running the job once recovers it.
+- `dnx` invocation is best-effort; availability depends on the SDK build the runner happens to have.
+- Tool arm64 binaries are built but not exercised by the smoke-test runners (GitHub-hosted runners are still x64 / Apple Silicon mac — the latter does cover macos-arm64 transitively via the macos-latest runner, but linux-arm64 and win-arm64 binaries are unverified beyond a clean build).
+
+---
+
+## Initial roadmap complete
+
+All eight phases of the initial SynthSharp roadmap are now in `Completed baseline`. The project ships:
+
+- A playable Windows MAUI desktop app (zip + portable launcher .exe) with four configurable pad rows, per-pad waveform/envelope/filter/LFO, sample import and per-pad gain, pattern record + playback, preset save/load.
+- A cross-platform CLI tool (`SynthSharp.Tool`) for tone rendering and preset bootstrap via `dnx` or `dotnet tool install`, published for six RIDs.
+- Four NuGet packages (`SynthSharp.Core`, `SynthSharp.Audio`, `SynthSharp.Input`, `SynthSharp.Tool`) exposing the engine + abstractions for downstream integration.
+- A CI/release pipeline that runs tests, packs NuGets, builds tool binaries for six RIDs, builds the Windows MAUI app + portable launcher, and smoke-tests the published tool end-to-end on three operating systems.
+
+### Beyond the initial roadmap
+
+Ideas worth picking up next (not on the original eight-phase plan):
+
+- **Looping samples and per-sample trim controls** — currently samples play once per NoteOn through their full length.
+- **Multi-track patterns** — extend the recorder/player to layer multiple clips with independent tempos and loop points.
+- **macOS MAUI build with notarization** — needs Apple Developer cert plumbing.
+- **Real-time / low-latency audio output** — current Plugin.Maui.Audio path adds a perceptible warmup; switching to WASAPI / AudioGraph on Windows would tighten latency for performance use.
+- **MIDI input** — current input is computer keyboard only; MIDI controllers would unlock a much wider performance surface.
+- **Audible quality benchmarks** — automated regression tests that compare rendered WAVs against golden reference files via a perceptual hash, so DSP changes don't silently degrade output.
