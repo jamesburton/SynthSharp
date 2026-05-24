@@ -33,4 +33,7 @@ public sealed class PadAssignment
     /// Ignored when <see cref="SampleFileName"/> is null. Out-of-range values are clipped at the PCM16 quantisation stage in the exporter.
     /// </summary>
     public double SampleGain { get; set; } = 1.0;
+
+    /// <summary>Per-pad filter; defaults to <see cref="FilterSettings.Off"/> which bypasses filtering.</summary>
+    public FilterSettings Filter { get; set; } = FilterSettings.Off;
 }

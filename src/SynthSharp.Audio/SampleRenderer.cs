@@ -1,3 +1,4 @@
+using NWaves.Filters.BiQuad;
 using SynthSharp.Core.Audio;
 using SynthSharp.Core.Persistence;
 
@@ -5,26 +6,32 @@ namespace SynthSharp.Audio;
 
 /// <summary>
 /// Renders an imported <see cref="Sample"/> into a PCM16 WAV stream playable by
-/// <see cref="IAudioPlaybackBackend"/>, with optional gain and ADSR-envelope shaping.
+/// <see cref="IAudioPlaybackBackend"/>, with optional gain, ADSR-envelope shaping, and BiQuad filtering.
 /// </summary>
 public static class SampleRenderer
 {
     /// <summary>
     /// Returns a fresh PCM16 WAV <see cref="MemoryStream"/> containing the sample's audio
-    /// with gain and envelope applied. The output stream's position is at 0 and it is owned
-    /// by the caller (the caller disposes).
+    /// with gain, envelope, and optional filter applied. The output stream's position is at 0
+    /// and it is owned by the caller (the caller disposes).
     /// </summary>
     /// <param name="sample">The sample to render.</param>
     /// <param name="gain">Linear multiplier applied to every sample value. 1.0 = unchanged.</param>
     /// <param name="envelope">ADSR envelope. Applied as an amplitude curve across the sample's frames.</param>
     /// <param name="exporter">Used to encode the gain+envelope-shaped Sample as PCM16 WAV.</param>
+    /// <param name="filter">
+    /// Optional per-pad filter applied sample-by-sample after gain and envelope shaping.
+    /// A separate filter instance is constructed per channel to prevent state cross-talk.
+    /// Pass <see langword="null"/> or <see cref="FilterSettings.Off"/> for bypass.
+    /// </param>
     /// <returns>A PCM16 WAV MemoryStream ready for <see cref="IAudioPlaybackBackend.PlayAsync"/>.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="sample"/> or <paramref name="exporter"/> is null.</exception>
     public static MemoryStream Render(
         Sample sample,
         double gain,
         Envelope envelope,
-        ISampleExporter exporter)
+        ISampleExporter exporter,
+        FilterSettings? filter = null)
     {
         ArgumentNullException.ThrowIfNull(sample);
         ArgumentNullException.ThrowIfNull(exporter);
@@ -43,10 +50,16 @@ public static class SampleRenderer
         for (var c = 0; c < channelCount; c++)
         {
             shaped[c] = new float[frameCount];
+
+            // Construct one independent filter instance per channel so IIR delay-line state
+            // does not cross-talk between left and right (or additional channels).
+            var biquad = filter is not null ? AudioFilters.Create(filter, sampleRate) : null;
+
             for (var i = 0; i < frameCount; i++)
             {
                 var amp = EnvelopeAmplitude(i, attackSamples, decaySamples, sustainStart, sustainEnd, releaseSamples, envelope.SustainLevel);
-                shaped[c][i] = (float)(sample.Channels[c][i] * amp * gain);
+                var enveloped = (float)(sample.Channels[c][i] * amp * gain);
+                shaped[c][i] = biquad is not null ? biquad.Process(enveloped) : enveloped;
             }
         }
 

@@ -9,11 +9,24 @@ public static class WavToneRenderer
     private const short BitsPerSample = 16;
     private const short Channels = 1;
 
+    /// <summary>
+    /// Renders a mono PCM-16 WAV stream for the given waveform, frequency, duration, and envelope.
+    /// </summary>
+    /// <param name="waveform">The waveform shape to synthesise.</param>
+    /// <param name="frequencyHz">Fundamental frequency in Hz.</param>
+    /// <param name="duration">Duration of the rendered audio.</param>
+    /// <param name="envelope">ADSR envelope applied as an amplitude curve.</param>
+    /// <param name="filter">
+    /// Optional per-pad filter applied sample-by-sample after envelope shaping.
+    /// Pass <see langword="null"/> or <see cref="FilterSettings.Off"/> for bypass.
+    /// </param>
+    /// <returns>A read-only <see cref="MemoryStream"/> at position 0 containing the WAV bytes.</returns>
     public static MemoryStream RenderMonoPcm16(
         WaveformType waveform,
         double frequencyHz,
         TimeSpan duration,
-        Envelope envelope)
+        Envelope envelope,
+        FilterSettings? filter = null)
     {
         var sampleCount = Math.Max(1, (int)(SampleRate * duration.TotalSeconds));
         var byteCount = sampleCount * sizeof(short);
@@ -28,12 +41,19 @@ public static class WavToneRenderer
         var sustainStart = attackSamples + decaySamples;
         var sustainEnd = Math.Max(sustainStart, sampleCount - releaseSamples);
 
+        // Construct the filter once up front; null means bypass.
+        var biquad = filter is not null ? AudioFilters.Create(filter, SampleRate) : null;
+
         for (var i = 0; i < sampleCount; i++)
         {
             var phase = 2d * Math.PI * frequencyHz * (i / (double)SampleRate);
             var amplitude = EnvelopeAmplitude(i, sampleCount, attackSamples, decaySamples, sustainStart, sustainEnd, releaseSamples, envelope.SustainLevel);
-            var sample = WaveformSampleGenerator.NextSample(waveform, phase) * amplitude;
-            var pcm = (short)Math.Clamp(sample * short.MaxValue, short.MinValue, short.MaxValue);
+            var rendered = WaveformSampleGenerator.NextSample(waveform, phase) * amplitude;
+
+            // Apply filter when present; keep the null path lossless (no float cast).
+            var filtered = biquad is not null ? (double)biquad.Process((float)rendered) : rendered;
+
+            var pcm = (short)Math.Clamp(filtered * short.MaxValue, short.MinValue, short.MaxValue);
             BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(44 + (i * 2), 2), pcm);
         }
 

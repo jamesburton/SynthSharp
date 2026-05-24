@@ -89,7 +89,8 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
         {
             var sustainEnvelope = assignment.Envelope with { ReleaseSeconds = 0d };
             stream = WavToneRenderer.RenderMonoPcm16(
-                assignment.Waveform, assignment.FrequencyHz, MaxSustainDuration, sustainEnvelope);
+                assignment.Waveform, assignment.FrequencyHz, MaxSustainDuration, sustainEnvelope,
+                filter: assignment.Filter);
         }
 
         lock (_gate)
@@ -287,7 +288,8 @@ public sealed class SynthAudioEngine : ISynthAudioEngine
         using var fileStream = File.OpenRead(path);
         var sample = _sampleImporter.Import(fileStream, sourcePath: path);
         var sustainEnvelope = assignment.Envelope with { ReleaseSeconds = 0d };
-        return SampleRenderer.Render(sample, assignment.SampleGain, sustainEnvelope, _sampleExporter);
+        return SampleRenderer.Render(sample, assignment.SampleGain, sustainEnvelope, _sampleExporter,
+            filter: assignment.Filter);
     }
 
     private async Task PlayReleaseTailAsync(PadAssignment assignment)
