@@ -28,6 +28,8 @@ public partial class MainPage : ContentPage
     private readonly IPatternRecorder _patternRecorder;
     private readonly IPatternSetPlayer _patternSetPlayer;
     private readonly PatternSet _patternSet;
+    private readonly ISampleImporter _sampleImporter;
+    private readonly SampleWaveformDrawable _waveformDrawable = new();
 
     // Parallel list backing MidiDevicePicker; preserves stable MidiDeviceInfo objects
     // so selection by index is safe even when two devices share the same display name.
@@ -44,7 +46,8 @@ public partial class MainPage : ContentPage
         KeyboardLayoutPreset preset,
         IPatternRecorder patternRecorder,
         IPatternSetPlayer patternSetPlayer,
-        PatternSet patternSet)
+        PatternSet patternSet,
+        ISampleImporter sampleImporter)
     {
         _audioEngine = audioEngine;
         _keyboardInputSource = keyboardInputSource;
@@ -55,6 +58,7 @@ public partial class MainPage : ContentPage
         _patternRecorder = patternRecorder;
         _patternSetPlayer = patternSetPlayer;
         _patternSet = patternSet;
+        _sampleImporter = sampleImporter;
 
         // Ensure the set always has at least one track so recording has a target.
         if (_patternSet.Tracks.Count == 0)
@@ -64,6 +68,10 @@ public partial class MainPage : ContentPage
         _selectedTrack = _patternSet.Tracks[0];
 
         InitializeComponent();
+
+        // Assign before any picker initialisation so the drawable is ready when the first
+        // pad selection fires OnPadSelectionChanged → RefreshWaveform via SelectedIndex = 0 below.
+        WaveformView.Drawable = _waveformDrawable;
 
         WaveformPicker.ItemsSource = Enum.GetNames<WaveformType>();
         FilterTypePicker.ItemsSource = Enum.GetNames<FilterType>();
@@ -156,6 +164,8 @@ public partial class MainPage : ContentPage
         TrimStartEntry.Text = pad.SampleTrimStartFrame.ToString();
         TrimEndEntry.Text = pad.SampleTrimEndFrame.ToString();
         PolyphonyEntry.Text = pad.MaxPolyphony.ToString();
+
+        RefreshWaveform(pad);
     }
 
     private async void OnApplyPadClicked(object? sender, EventArgs e)
@@ -278,6 +288,7 @@ public partial class MainPage : ContentPage
         _padTriggerRouter.Rebuild(_currentPreset.Pads);
         RefreshPadPickerItems();
         RebuildPadRows();
+        RefreshWaveform(pad);
         await PlayPadAsync(pad);
         SetStatus($"Updated {pad.PadId}.");
     }
@@ -334,6 +345,7 @@ public partial class MainPage : ContentPage
 
             pad.SampleFileName = safeName;
             SampleFileLabel.Text = safeName;
+            RefreshWaveform(pad);
             SetStatus($"Loaded sample '{picked.FileName}' onto pad {pad.PadId} (apply to commit).");
         }
         catch (Exception ex)
@@ -353,6 +365,7 @@ public partial class MainPage : ContentPage
 
         pad.SampleFileName = null;
         SampleFileLabel.Text = "(none)";
+        RefreshWaveform(pad);
         SetStatus($"Cleared sample on pad {pad.PadId} (apply to commit).");
     }
 
@@ -360,6 +373,41 @@ public partial class MainPage : ContentPage
     public static string GetSamplesDirectory()
     {
         return Path.Combine(FileSystem.Current.AppDataDirectory, "samples");
+    }
+
+    /// <summary>
+    /// Loads the pad's sample from disk (synchronous, main thread — fine for typical MB-sized files)
+    /// and refreshes the waveform drawable with the current trim and loop settings.
+    /// </summary>
+    /// <param name="pad">The pad whose sample and overlay settings should be displayed.</param>
+    private void RefreshWaveform(PadAssignment pad)
+    {
+        Sample? sample = null;
+
+        if (!string.IsNullOrWhiteSpace(pad.SampleFileName))
+        {
+            var path = Path.Combine(GetSamplesDirectory(), pad.SampleFileName);
+            if (File.Exists(path))
+            {
+                try
+                {
+                    using var stream = File.OpenRead(path);
+                    sample = _sampleImporter.Import(stream, path);
+                }
+                catch
+                {
+                    // Treat unreadable/corrupt files as "no sample" — the placeholder will render instead.
+                }
+            }
+        }
+
+        _waveformDrawable.Sample = sample;
+        _waveformDrawable.TrimStartFrame = pad.SampleTrimStartFrame;
+        _waveformDrawable.TrimEndFrame = pad.SampleTrimEndFrame;
+        _waveformDrawable.LoopEnabled = pad.SampleLoopEnabled;
+        _waveformDrawable.LoopStartFrame = pad.SampleLoopStartFrame;
+        _waveformDrawable.LoopEndFrame = pad.SampleLoopEndFrame;
+        WaveformView.Invalidate();
     }
 
     private async void OnPlaySelectedClicked(object? sender, EventArgs e)

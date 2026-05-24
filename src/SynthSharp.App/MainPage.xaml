@@ -40,6 +40,8 @@
                         <Label Grid.Row="10" Text="Polyphony (0=engine)" VerticalTextAlignment="Center" />
                         <Entry Grid.Row="10" Grid.Column="1" x:Name="PolyphonyEntry" Placeholder="0" />
                     </Grid>
+                    <GraphicsView x:Name="WaveformView" HeightRequest="80" />
+
                     <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
                         <Label Grid.Row="0" Text="Filter type" VerticalTextAlignment="Center" />
                         <Picker Grid.Row="0" Grid.Column="1" x:Name="FilterTypePicker" />
