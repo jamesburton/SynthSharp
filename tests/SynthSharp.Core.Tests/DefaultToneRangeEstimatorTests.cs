@@ -133,4 +133,15 @@ public sealed class DefaultToneRangeEstimatorTests
 
         Assert.Throws<ArgumentNullException>(() => estimator.Estimate(null!));
     }
+
+    [Fact]
+    public void Estimate_FrequencyBelowMidiRange_ReturnsNull()
+    {
+        // 1 Hz has a positive fundamental but maps to MIDI note -36 (out of [0, 127]),
+        // so Pitch.ToMidiNote returns -1 and the estimator must return null.
+        var estimator = new DefaultToneRangeEstimator();
+        var pitch = MakePitch(1f, 0.9f);
+
+        Assert.Null(estimator.Estimate(pitch));
+    }
 }

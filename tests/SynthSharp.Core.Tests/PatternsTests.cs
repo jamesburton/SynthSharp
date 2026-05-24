@@ -106,6 +106,43 @@ public sealed class PatternsTests
         Assert.Throws<ArgumentNullException>(() => recorder.Start(null!));
     }
 
+    [Fact]
+    public void Recorder_IsRecording_FalseBeforeStart()
+    {
+        var recorder = new DefaultPatternRecorder();
+
+        // IsRecording should be false before Start() is called.
+        Assert.False(recorder.IsRecording);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    public void Recorder_Record_EmptyOrNullPadId_IsNoOp(string? padId)
+    {
+        var clip = new PatternClip();
+        var recorder = new DefaultPatternRecorder();
+        recorder.Start(clip);
+
+        // Empty/null padId must be silently ignored — no event recorded.
+        recorder.Record(padId!);
+
+        recorder.Stop();
+        Assert.Empty(clip.Events);
+    }
+
+    [Fact]
+    public void Recorder_Stop_WhenNotRecording_IsNoOp()
+    {
+        var recorder = new DefaultPatternRecorder();
+
+        // Stop() before Start() should not throw.
+        recorder.Stop();
+
+        // IsRecording should still be false.
+        Assert.False(recorder.IsRecording);
+    }
+
     // ----- DefaultPatternPlayer -----
 
     [Fact]

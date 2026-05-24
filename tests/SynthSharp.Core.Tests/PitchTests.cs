@@ -155,4 +155,71 @@ public class PitchTests
         var result = Pitch.SnapToNearestSemitone(hz);
         Assert.Equal(0d, result);
     }
+
+    // ---------------------------------------------------------------------------
+    // TryParseNote edge cases
+    // ---------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TryParseNote_NullOrWhitespace_ReturnsFalse(string? input)
+    {
+        var ok = Pitch.TryParseNote(input!, out var midi);
+        Assert.False(ok);
+        Assert.Equal(0, midi);
+    }
+
+    [Fact]
+    public void TryParseNote_NoRegexMatch_ReturnsFalse()
+    {
+        // "Zx9" does not match the note regex — not a valid note letter.
+        var ok = Pitch.TryParseNote("Zx9", out var midi);
+        Assert.False(ok);
+        Assert.Equal(0, midi);
+    }
+
+    [Fact]
+    public void TryParseNote_FlatAccidental_ParsesCorrectly()
+    {
+        // Bb4 = B♭4 = one semitone below B4 (MIDI 71) = MIDI 70 = A#4.
+        var ok = Pitch.TryParseNote("Bb4", out var midi);
+        Assert.True(ok);
+        Assert.Equal(70, midi);
+    }
+
+    // ---------------------------------------------------------------------------
+    // TryResolveFrequency edge cases
+    // ---------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TryResolveFrequency_NullOrWhitespace_ReturnsFalse(string? input)
+    {
+        var ok = Pitch.TryResolveFrequency(input!, out var hz);
+        Assert.False(ok);
+        Assert.Equal(0d, hz);
+    }
+
+    [Fact]
+    public void TryResolveFrequency_HzAboveNyquist_ReturnsFalse()
+    {
+        // Values above 22050 must be rejected by the range guard.
+        var ok = Pitch.TryResolveFrequency("22051", out var hz);
+        Assert.False(ok);
+        Assert.Equal(0d, hz);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-100")]
+    public void TryResolveFrequency_NonPositiveHz_ReturnsFalse(string input)
+    {
+        var ok = Pitch.TryResolveFrequency(input, out var hz);
+        Assert.False(ok);
+        Assert.Equal(0d, hz);
+    }
 }

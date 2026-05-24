@@ -390,4 +390,163 @@ public class WavSampleImporterTests
 
         Assert.Throws<InvalidDataException>(() => _importer.Import(stream));
     }
+
+    [Fact]
+    public void Import_SkipsUnknownChunkBeforeFmt()
+    {
+        // Insert a non-fmt, non-data chunk BEFORE the fmt chunk.
+        // ReadFmtChunk must scan past it and still find the fmt chunk correctly.
+        var infoPayload = new byte[] { 0x00, 0x01, 0x02, 0x03 };
+        var pcm = new short[] { 1000, 2000, 3000 };
+
+        // BuildWavWithChunkBeforeFmt: manually construct RIFF / INFO / fmt / data.
+        var bytes = BuildWavBytesWithPreFmtChunk("INFO", infoPayload, pcm, channelCount: 1, sampleRate: 44100);
+        using var stream = new MemoryStream(bytes);
+
+        var sample = _importer.Import(stream);
+
+        Assert.Equal(3, sample.Metadata.FrameCount);
+        Assert.Equal(44100, sample.Metadata.SampleRateHz);
+    }
+
+    [Fact]
+    public void Import_RejectsFmtChunkSmallerThan16Bytes()
+    {
+        // Build a WAV whose fmt chunk size is declared as 10 (below the 16-byte minimum).
+        var bytes = BuildWavBytesWithSmallFmt(fmtSize: 10, channelCount: 1, sampleRate: 44100);
+        using var stream = new MemoryStream(bytes);
+
+        Assert.Throws<InvalidDataException>(() => _importer.Import(stream));
+    }
+
+    [Fact]
+    public void Import_RejectsTruncatedBeforeFmt()
+    {
+        // Stream that has RIFF+WAVE header but ends immediately after — no chunks at all.
+        // ReadFmtChunk will try to read a chunk ID, get < 4 bytes, and throw.
+        var buf = new byte[12];
+        "RIFF"u8.CopyTo(buf.AsSpan(0));
+        BinaryPrimitives.WriteInt32LittleEndian(buf.AsSpan(4), 4);  // tiny declared size
+        "WAVE"u8.CopyTo(buf.AsSpan(8));
+        using var stream = new MemoryStream(buf);
+
+        Assert.Throws<InvalidDataException>(() => _importer.Import(stream));
+    }
+
+    [Fact]
+    public void Import_RejectsTruncatedBeforeData()
+    {
+        // Stream that has RIFF+WAVE+fmt but no data chunk — stream ends after fmt.
+        // SeekToDataChunk will try to read a chunk ID, get < 4 bytes, and throw.
+        var bytes = BuildWavBytesNoDataChunk(channelCount: 1, sampleRate: 44100);
+        using var stream = new MemoryStream(bytes);
+
+        Assert.Throws<InvalidDataException>(() => _importer.Import(stream));
+    }
+
+    // ---------------------------------------------------------------------------
+    // Additional builder helpers for importer edge-case tests
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Builds a RIFF/WAVE stream that places an extra chunk with the given id and payload
+    /// BEFORE the fmt chunk, then writes a valid fmt chunk and data chunk.
+    /// </summary>
+    private static byte[] BuildWavBytesWithPreFmtChunk(
+        string preFmtChunkId,
+        byte[] preFmtPayload,
+        short[] pcmSamples,
+        int channelCount,
+        int sampleRate)
+    {
+        var dataPayloadBytes = pcmSamples.Length * 2;
+
+        // Total: RIFF(12) + preFmt(8 + payload) + fmt(24) + data(8 + dataPayload).
+        var totalSize = 12 + 8 + preFmtPayload.Length + 24 + 8 + dataPayloadBytes;
+        var buf = new byte[totalSize];
+        var span = buf.AsSpan();
+        var pos = 0;
+
+        WriteAscii(span, ref pos, "RIFF");
+        WriteInt32LE(span, ref pos, totalSize - 8);
+        WriteAscii(span, ref pos, "WAVE");
+
+        // Pre-fmt unknown chunk.
+        WriteAscii(span, ref pos, preFmtChunkId);
+        WriteInt32LE(span, ref pos, preFmtPayload.Length);
+        preFmtPayload.AsSpan().CopyTo(span[pos..]);
+        pos += preFmtPayload.Length;
+
+        // fmt chunk.
+        WriteAscii(span, ref pos, "fmt ");
+        WriteInt32LE(span, ref pos, 16);
+        WriteInt16LE(span, ref pos, 1); // PCM
+        WriteInt16LE(span, ref pos, (short)channelCount);
+        WriteInt32LE(span, ref pos, sampleRate);
+        WriteInt32LE(span, ref pos, sampleRate * channelCount * 2); // byte rate
+        WriteInt16LE(span, ref pos, (short)(channelCount * 2));     // block align
+        WriteInt16LE(span, ref pos, 16);                             // bits per sample
+
+        // data chunk.
+        WriteAscii(span, ref pos, "data");
+        WriteInt32LE(span, ref pos, dataPayloadBytes);
+        for (var i = 0; i < pcmSamples.Length; i++)
+        {
+            BinaryPrimitives.WriteInt16LittleEndian(span[pos..], pcmSamples[i]);
+            pos += 2;
+        }
+
+        return buf;
+    }
+
+    /// <summary>Builds a RIFF/WAVE stream with a fmt chunk whose declared size is <paramref name="fmtSize"/> (< 16).</summary>
+    private static byte[] BuildWavBytesWithSmallFmt(int fmtSize, int channelCount, int sampleRate)
+    {
+        // We still write canonical 16 bytes in the fmt payload but declare a smaller size.
+        var totalSize = 12 + 8 + fmtSize;
+        var buf = new byte[12 + 8 + 16]; // always write 16 fmt bytes so no buffer overrun
+        var span = buf.AsSpan();
+        var pos = 0;
+
+        WriteAscii(span, ref pos, "RIFF");
+        WriteInt32LE(span, ref pos, totalSize - 8);
+        WriteAscii(span, ref pos, "WAVE");
+        WriteAscii(span, ref pos, "fmt ");
+        WriteInt32LE(span, ref pos, fmtSize); // declared smaller than 16
+        WriteInt16LE(span, ref pos, 1);
+        WriteInt16LE(span, ref pos, (short)channelCount);
+        WriteInt32LE(span, ref pos, sampleRate);
+        WriteInt32LE(span, ref pos, sampleRate * channelCount * 2);
+        WriteInt16LE(span, ref pos, (short)(channelCount * 2));
+        WriteInt16LE(span, ref pos, 16);
+
+        return buf;
+    }
+
+    /// <summary>
+    /// Builds a RIFF/WAVE stream that contains a valid fmt chunk but no data chunk —
+    /// the stream ends immediately after the fmt chunk body.
+    /// </summary>
+    private static byte[] BuildWavBytesNoDataChunk(int channelCount, int sampleRate)
+    {
+        // RIFF(12) + fmt(24) — no data chunk at all.
+        var totalSize = 12 + 24;
+        var buf = new byte[totalSize];
+        var span = buf.AsSpan();
+        var pos = 0;
+
+        WriteAscii(span, ref pos, "RIFF");
+        WriteInt32LE(span, ref pos, totalSize - 8);
+        WriteAscii(span, ref pos, "WAVE");
+        WriteAscii(span, ref pos, "fmt ");
+        WriteInt32LE(span, ref pos, 16);
+        WriteInt16LE(span, ref pos, 1);
+        WriteInt16LE(span, ref pos, (short)channelCount);
+        WriteInt32LE(span, ref pos, sampleRate);
+        WriteInt32LE(span, ref pos, sampleRate * channelCount * 2);
+        WriteInt16LE(span, ref pos, (short)(channelCount * 2));
+        WriteInt16LE(span, ref pos, 16);
+
+        return buf;
+    }
 }

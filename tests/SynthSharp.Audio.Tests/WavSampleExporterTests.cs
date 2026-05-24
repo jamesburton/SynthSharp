@@ -277,6 +277,27 @@ public class WavSampleExporterTests
     }
 
     [Fact]
+    public void Export_RejectsZeroSampleRate()
+    {
+        // SampleMetadata allows SampleRateHz = 0 (the record has no validation).
+        // Sample's constructor only validates channel array lengths, not SampleRateHz.
+        // The exporter must catch this via its own SampleRateHz <= 0 guard.
+        var metadata = new SampleMetadata(
+            Name: "test",
+            ChannelCount: 1,
+            SampleRateHz: 0,           /* invalid — zero sample rate */
+            FrameCount: 0,
+            Duration: TimeSpan.Zero,
+            SourceBitsPerSample: 16,
+            SourcePath: null,
+            ImportedAt: DateTimeOffset.UtcNow);
+        var sample = new Sample(metadata, new float[][] { Array.Empty<float>() });
+
+        using var ms = new MemoryStream();
+        Assert.Throws<ArgumentException>(() => _exporter.Export(sample, ms));
+    }
+
+    [Fact]
     public void Export_ThrowsOnNullSample()
     {
         using var ms = new MemoryStream();

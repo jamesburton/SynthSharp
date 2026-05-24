@@ -281,6 +281,21 @@ public sealed class SynthAudioEngineTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
+    public void NoteOff_NullOrWhitespaceVoiceId_IsNoOp(string? voiceId)
+    {
+        var backend = new FakeAudioPlaybackBackend();
+        var engine = new SynthAudioEngine(backend, maxPolyphony: 1);
+
+        // Null/empty/whitespace voiceId must be silently ignored — no throw, no backend call.
+        engine.NoteOff(voiceId!);
+
+        Assert.Empty(backend.Invocations);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
     public async Task NoteOnAsync_WithMissingVoiceId_ThrowsArgumentException(string? voiceId)
     {
         var backend = new FakeAudioPlaybackBackend();

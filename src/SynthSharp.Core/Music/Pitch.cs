@@ -11,11 +11,23 @@ public static partial class Pitch
     [GeneratedRegex(@"^([A-Ga-g])([#b]?)(-?\d+)$", RegexOptions.Compiled)]
     private static partial Regex NoteRegex();
 
+    /// <summary>Converts a MIDI note number to a frequency in Hz using equal-temperament tuning (A4 = 440 Hz).</summary>
+    /// <param name="midiNote">MIDI note number (0–127; values outside this range produce extreme but mathematically valid frequencies).</param>
+    /// <returns>The frequency in Hz corresponding to <paramref name="midiNote"/>.</returns>
     public static double ToFrequencyHz(int midiNote)
     {
         return A4Frequency * Math.Pow(2d, (midiNote - A4Midi) / 12d);
     }
 
+    /// <summary>Parses a scientific-notation note name (e.g. "C#4", "Bb3", "A4") to a MIDI note number.</summary>
+    /// <param name="input">The note string to parse. Null, empty, or whitespace input returns <see langword="false"/>.</param>
+    /// <param name="midiNote">
+    /// When this method returns <see langword="true"/>, the MIDI note number in [0, 127]; otherwise 0.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> when <paramref name="input"/> represents a valid note whose MIDI note falls in [0, 127];
+    /// <see langword="false"/> for null/whitespace, unrecognised patterns, or out-of-range results.
+    /// </returns>
     public static bool TryParseNote(string input, out int midiNote)
     {
         midiNote = 0;
@@ -64,6 +76,21 @@ public static partial class Pitch
         return midiNote is >= 0 and <= 127;
     }
 
+    /// <summary>
+    /// Resolves a frequency from either a numeric Hz string (e.g. "523.25") or a note name (e.g. "C5").
+    /// </summary>
+    /// <param name="input">
+    /// A string containing either a positive Hz value in the range (0, 22050] or a scientific-notation
+    /// note name accepted by <see cref="TryParseNote"/>. Null, empty, or whitespace input returns
+    /// <see langword="false"/>.
+    /// </param>
+    /// <param name="frequencyHz">
+    /// When this method returns <see langword="true"/>, the resolved frequency in Hz; otherwise 0.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> when the input is a valid Hz value in (0, 22050] or a valid MIDI note name;
+    /// <see langword="false"/> otherwise.
+    /// </returns>
     public static bool TryResolveFrequency(string input, out double frequencyHz)
     {
         frequencyHz = 0;

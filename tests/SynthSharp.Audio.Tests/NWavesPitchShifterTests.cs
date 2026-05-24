@@ -185,4 +185,33 @@ public sealed class NWavesPitchShifterTests
 
         Assert.Throws<ArgumentNullException>(() => shifter.Shift(null!, semitones: 1));
     }
+
+    [Fact]
+    public void Shift_OutputFrameCount_AlwaysMatchesSourceFrameCount()
+    {
+        // NormaliseLength must truncate or zero-pad the phase vocoder output so that the
+        // returned sample's FrameCount always equals the source's FrameCount.
+        // This exercises the length-normalisation paths in NWavesPitchShifter (including
+        // the truncation branch when the vocoder output is longer than the input).
+        var shifter = new NWavesPitchShifter();
+
+        // Use multiple durations and shift amounts; shorter signals tend to produce
+        // relative over-run from hop-padding in the phase vocoder.
+        int[] semitoneValues = [1, 5, 12, -7];
+        double[] durationValues = [0.05, 0.1, 0.5];
+
+        foreach (var dur in durationValues)
+        {
+            var source = MakeSineSample(440, durationSeconds: dur);
+            foreach (var semitones in semitoneValues)
+            {
+                var result = shifter.Shift(source, semitones);
+                Assert.Equal(source.Metadata.FrameCount, result.Metadata.FrameCount);
+                for (var c = 0; c < result.Channels.Count; c++)
+                {
+                    Assert.Equal(result.Metadata.FrameCount, result.Channels[c].Length);
+                }
+            }
+        }
+    }
 }
