@@ -1,72 +1,91 @@
-# SynthSharp 0.1.0
+# SynthSharp
 
-SynthSharp is a .NET 10 synthesis workspace with:
-- A MAUI app host (`SynthSharp.App`) for interactive pad-based playback.
-- A companion CLI/tool package (`SynthSharp.Tool`) for automation, preset bootstrap, and zero-install `dnx` execution.
+SynthSharp ships as two primary runtime surfaces:
+1. `SynthSharp.Tool` (**primary run path**) for zero-install `dnx` and scripting workflows.
+2. `SynthSharp.App` (MAUI desktop app) for interactive pad-based playback and editing.
 
-## MVP status
+## What's in this release
 
-This repository currently includes:
-- A modular solution split into `Core`, `Audio`, `Input`, and `App`.
-- A playable MAUI UI with a 4-row keyboard layout (including number row).
-- Reconfigurable per-pad assignment for label, key binding, waveform, and pitch.
-- Generated waveform playback (sine, square, sawtooth, triangle).
-- JSON preset save/load support.
+- Per-pad waveforms and ADSR envelope control.
+- Sample import and playback (WAV files assignable per pad).
+- Pitch detection with configurable pitch variants per pad.
+- Filter (BiQuad) and LFO (amplitude/pitch/filter modulation).
+- Pattern record and playback for pad sequences.
 
-## Layout model
+## Quick start (primary `dnx` path)
 
-Default row roles:
-1. Melodic A
-2. Melodic B
-3. Percussion (generated)
-4. Mixed sample lane (placeholder behavior in MVP)
+Replace `0.5.0` with the latest release tag from the [Releases page](https://github.com/jamesburton/SynthSharp/releases).
 
-All pad-to-key mappings are user-reconfigurable in-app.
+Use these first once NuGet propagation is complete:
 
-## Build and run (local)
-
-```powershell
-dotnet restore SynthSharp.slnx
-dotnet test tests\SynthSharp.Core.Tests\SynthSharp.Core.Tests.csproj
-dotnet test tests\SynthSharp.Audio.Tests\SynthSharp.Audio.Tests.csproj
-dotnet build src\SynthSharp.App\SynthSharp.App.csproj -f net10.0-windows10.0.19041.0
-dotnet run --project src\SynthSharp.App\SynthSharp.App.csproj -f net10.0-windows10.0.19041.0
-```
-
-## Tool/CLI usage
-
-Once `SynthSharp.Tool` is published to NuGet:
-
-### Preferred zero-install path (when available)
 ```powershell
 dnx SynthSharp.Tool tone --wave sawtooth --pitch C4 --duration-ms 500 --out tone.wav
 dnx SynthSharp.Tool preset --out default-preset.json
 ```
 
-### Global install path
+If `dnx` cannot resolve the package yet, use the fallback:
+
 ```powershell
-dotnet tool install --global SynthSharp.Tool --version 0.1.0
+dotnet tool install --global SynthSharp.Tool --version 0.5.0
 synthsharp tone --wave square --pitch A4 --duration-ms 350 --out tone.wav
 ```
 
-`dnx` availability can lag shortly after package publication while feeds index new versions.
+## Running the MAUI app
 
-## Release and publishing pipeline
+`dnx` does **not** run the MAUI GUI host directly.
 
-Two GitHub Actions workflows are provided:
+This is now confirmed from .NET tooling model: `dnx`/`dotnet tool exec` runs **.NET tool packages** (CLI tools), while MAUI is a GUI app packaging model.
 
-1. `ci.yml`  
-   - Runs tests.
-   - Builds Windows MAUI target.
+Use one of these MAUI app paths:
 
-2. `release.yml` (tag `v*` or manual dispatch)  
-   - Packs/publishes NuGet packages (`Core`, `Audio`, `Input`, `Tool`) using `NUGET_API_KEY`.
-   - Publishes cross-platform `SynthSharp.Tool` binaries (`win-x64`, `linux-x64`, `osx-x64`).
-   - Publishes Windows MAUI app artifact zip.
-   - Creates GitHub release with all artifacts attached.
+1. Download the Windows app zip from the release page:  
+   `SynthSharp.App-0.5.0-windows.zip`
+2. Or download the portable launcher executable artifact:  
+   `SynthSharp.App-0.5.0-windows.exe`  
+   (convenience launcher; if dependencies are missing, use the full zip payload)
+3. Run locally from source:
+
+```powershell
+dotnet restore SynthSharp.slnx
+dotnet run --project src\SynthSharp.App\SynthSharp.App.csproj -f net10.0-windows10.0.19041.0
+```
+
+## CLI commands (`SynthSharp.Tool`)
+
+```powershell
+# generate a tone WAV
+dnx SynthSharp.Tool tone --wave sine --pitch A4 --duration-ms 350 --out tone.wav
+
+# generate default 4-row preset JSON
+dnx SynthSharp.Tool preset --out default-preset.json
+```
+
+Accepted `--wave` values: `sine`, `square`, `sawtooth` (`saw`), `triangle`  
+Accepted `--pitch` values: note names (`A4`, `C#5`) or Hz (`440`, `523.25`)
+
+## Release artifacts and publishing
+
+Release pipeline (`release.yml`, on `v*` tags or manual dispatch) publishes:
+- NuGet packages: `SynthSharp.Core`, `SynthSharp.Audio`, `SynthSharp.Input`, `SynthSharp.Tool`
+- Tool binaries: `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`
+- MAUI app artifacts:
+  - `SynthSharp.App-<version>-windows.zip` (full publish payload)
+  - `SynthSharp.App-<version>-windows.exe` (portable launcher convenience)
+- GitHub Release with all artifacts attached
+
+CI pipeline (`ci.yml`) runs tests and validates Windows MAUI build path.
 
 ## Packaging model
 
-- MAUI app distribution remains app-style packaging (installer/store/package artifacts).
-- `dnx` zero-install execution is provided by the `SynthSharp.Tool` package.
-- The codebase is structured so `Core` + `Audio` are shared by both MAUI and tool workflows.
+- `dnx` zero-install is the preferred usage path for automation/CLI.
+- MAUI remains app-style distribution (release artifact package).
+- Shared logic lives in `Core` + `Audio` for reuse by both tool and app hosts.
+
+## Linux/macOS equivalents (simple path)
+
+- For cross-platform command-line usage, use `SynthSharp.Tool` assets:
+  - `SynthSharp.Tool-<version>-linux-x64.tar.gz`
+  - `SynthSharp.Tool-<version>-linux-arm64.tar.gz`
+  - `SynthSharp.Tool-<version>-osx-x64.tar.gz`
+  - `SynthSharp.Tool-<version>-osx-arm64.tar.gz`
+- MAUI desktop app artifacts are currently produced for Windows in this release flow.

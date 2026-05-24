@@ -142,6 +142,12 @@ jobs:
             rid: win-x64
           - os: macos-latest
             rid: osx-x64
+          - os: ubuntu-latest
+            rid: linux-arm64
+          - os: windows-latest
+            rid: win-arm64
+          - os: macos-latest
+            rid: osx-arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -202,11 +208,82 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path "artifacts/app/windows/*" -DestinationPath "artifacts/app/SynthSharp.App-${{ needs.prepare.outputs.version }}-windows.zip"
 
+      - name: Export MAUI portable executable
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "artifacts/app/windows" -Filter "*.exe" | Where-Object { $_.Name -eq "SynthSharp.App.exe" } | Select-Object -First 1
+          if ($null -eq $exe) {
+            throw "Could not find SynthSharp.App.exe in publish output."
+          }
+          Copy-Item $exe.FullName "artifacts/app/SynthSharp.App-${{ needs.prepare.outputs.version }}-windows.exe"
+
+      # TODO(packaging-phase-9): Authenticode signing for MAUI Windows binaries
+      # Enable by setting the WINDOWS_CERT_PFX_BASE64 and WINDOWS_CERT_PASSWORD repository secrets.
+      # - name: Sign Windows MAUI binaries
+      #   if: env.WINDOWS_CERT_PFX_BASE64 != ''
+      #   env:
+      #     WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+      #     WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+      #   shell: pwsh
+      #   run: |
+      #     $bytes = [Convert]::FromBase64String($env:WINDOWS_CERT_PFX_BASE64)
+      #     $cert = "$env:RUNNER_TEMP\codesign.pfx"
+      #     [IO.File]::WriteAllBytes($cert, $bytes)
+      #     $exes = Get-ChildItem 'artifacts/app/windows' -Filter '*.exe' -Recurse
+      #     & signtool sign /f $cert /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /fd SHA256 /td SHA256 $exes.FullName
+
       - name: Upload MAUI artifact
         uses: actions/upload-artifact@v4
         with:
           name: maui-windows
-          path: artifacts/app/SynthSharp.App-${{ needs.prepare.outputs.version }}-windows.zip
+          path: |
+            artifacts/app/SynthSharp.App-${{ needs.prepare.outputs.version }}-windows.zip
+            artifacts/app/SynthSharp.App-${{ needs.prepare.outputs.version }}-windows.exe
+
+  smoke-test-tool:
+    runs-on: ${{ matrix.os }}
+    needs: [prepare, publish-nuget]
+    if: needs.prepare.outputs.publish_nuget == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Wait for NuGet propagation
+        shell: bash
+        run: sleep 60
+
+      - name: Install SynthSharp.Tool
+        shell: bash
+        run: |
+          dotnet tool install --global SynthSharp.Tool --version ${{ needs.prepare.outputs.version }} --add-source https://api.nuget.org/v3/index.json
+          echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+
+      - name: Run tool to render a tone
+        shell: bash
+        run: |
+          synthsharp tone --wave sine --pitch A4 --duration-ms 100 --out test-tone.wav
+          test -f test-tone.wav
+          # Validate file size > 1 KB (1024 bytes)
+          actual_size=$(wc -c < test-tone.wav)
+          if [ "$actual_size" -lt 1024 ]; then
+            echo "Generated WAV is too small: $actual_size bytes"
+            exit 1
+          fi
+
+      - name: Try dnx invocation (Windows only, optional)
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          # dnx is available in .NET 10 preview 4+ for tool packages
+          dnx SynthSharp.Tool tone --wave sawtooth --pitch C4 --duration-ms 100 --out dnx-tone.wav
+          if (-not (Test-Path dnx-tone.wav)) { throw 'dnx invocation did not produce output' }
 
   release:
     runs-on: ubuntu-latest
@@ -228,3 +305,4 @@ jobs:
             dist/**/*.zip
             dist/**/*.tar.gz
             dist/**/*.nupkg
+            dist/**/*.exe
