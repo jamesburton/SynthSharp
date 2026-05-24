@@ -81,12 +81,18 @@
             <Border StrokeThickness="1" Padding="12">
                 <VerticalStackLayout Spacing="8">
                     <Label Text="Pattern" FontAttributes="Bold" />
+                    <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                        <Label Text="Track:" VerticalTextAlignment="Center" />
+                        <Picker x:Name="TrackPicker" WidthRequest="180" SelectedIndexChanged="OnTrackSelectionChanged" />
+                        <Button Text="+ Add" Clicked="OnAddTrackClicked" />
+                        <Button Text="× Remove" Clicked="OnRemoveTrackClicked" />
+                    </HorizontalStackLayout>
                     <Label x:Name="PatternStatusLabel" Text="0 events, length 0 ms" />
                     <HorizontalStackLayout Spacing="8">
                         <Button x:Name="RecordButton" Text="Record" Clicked="OnRecordClicked" />
-                        <Button x:Name="PlayPatternButton" Text="Play" Clicked="OnPlayPatternClicked" />
+                        <Button x:Name="PlayPatternButton" Text="Play set" Clicked="OnPlayPatternClicked" />
                         <Button x:Name="StopPatternButton" Text="Stop" Clicked="OnStopPatternClicked" />
-                        <Button Text="Clear" Clicked="OnClearPatternClicked" />
+                        <Button Text="Clear track" Clicked="OnClearPatternClicked" />
                     </HorizontalStackLayout>
                 </VerticalStackLayout>
             </Border>

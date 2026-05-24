@@ -24,10 +24,11 @@ public partial class MainPage : ContentPage
     private readonly PadTriggerRouter _padTriggerRouter;
     private readonly Dictionary<string, PadAssignment> _padsById;
     private readonly IPatternRecorder _patternRecorder;
-    private readonly IPatternPlayer _patternPlayer;
-    private readonly PatternClip _currentClip;
+    private readonly IPatternSetPlayer _patternSetPlayer;
+    private readonly PatternSet _patternSet;
 
     private KeyboardLayoutPreset _currentPreset;
+    private PatternTrack _selectedTrack;
 
     public MainPage(
         ISynthAudioEngine audioEngine,
@@ -35,8 +36,8 @@ public partial class MainPage : ContentPage
         PadTriggerRouter padTriggerRouter,
         KeyboardLayoutPreset preset,
         IPatternRecorder patternRecorder,
-        IPatternPlayer patternPlayer,
-        PatternClip currentClip)
+        IPatternSetPlayer patternSetPlayer,
+        PatternSet patternSet)
     {
         _audioEngine = audioEngine;
         _keyboardInputSource = keyboardInputSource;
@@ -44,8 +45,15 @@ public partial class MainPage : ContentPage
         _currentPreset = preset;
         _padsById = _currentPreset.Pads.ToDictionary(x => x.PadId, StringComparer.OrdinalIgnoreCase);
         _patternRecorder = patternRecorder;
-        _patternPlayer = patternPlayer;
-        _currentClip = currentClip;
+        _patternSetPlayer = patternSetPlayer;
+        _patternSet = patternSet;
+
+        // Ensure the set always has at least one track so recording has a target.
+        if (_patternSet.Tracks.Count == 0)
+        {
+            _patternSet.AddTrack(new PatternTrack { Name = "Track 1", Clip = new PatternClip { Name = "Track 1" } });
+        }
+        _selectedTrack = _patternSet.Tracks[0];
 
         InitializeComponent();
 
@@ -67,6 +75,8 @@ public partial class MainPage : ContentPage
         }
 
         RebuildPadRows();
+        RebuildTrackPicker();
+        TrackPicker.SelectedIndex = 0;
         SetStatus("Ready.");
 
         // Best-effort pre-warm the audio pipeline so the user's first note doesn't
@@ -537,24 +547,25 @@ public partial class MainPage : ContentPage
         {
             _patternRecorder.Stop();
             RecordButton.Text = "Record";
-            SetStatus($"Stopped recording. Captured {_currentClip.Events.Count} events.");
+            SetStatus($"Stopped recording. {_selectedTrack.Name}: {_selectedTrack.Clip.Events.Count} events.");
             UpdatePatternStatus();
         }
         else
         {
-            _currentClip.Clear();
-            _patternRecorder.Start(_currentClip);
+            _selectedTrack.Clip.Clear();
+            _patternRecorder.Start(_selectedTrack.Clip);
             RecordButton.Text = "Stop recording";
             UpdatePatternStatus();
-            SetStatus("Recording — press keys or pad buttons to capture events.");
+            SetStatus($"Recording into {_selectedTrack.Name} — press keys or pad buttons to capture events.");
         }
     }
 
     private void OnPlayPatternClicked(object? sender, EventArgs e)
     {
-        if (_currentClip.Events.Count == 0)
+        var totalEvents = _patternSet.Tracks.Sum(t => t.Clip.Events.Count);
+        if (totalEvents == 0)
         {
-            SetStatus("Pattern is empty — record something first.");
+            SetStatus("Pattern set is empty — record something first.");
             return;
         }
 
@@ -565,16 +576,16 @@ public partial class MainPage : ContentPage
             RecordButton.Text = "Record";
         }
 
-        SetStatus($"Playing pattern ({_currentClip.Events.Count} events).");
+        SetStatus($"Playing set ({_patternSet.Tracks.Count} tracks, {totalEvents} events).");
 
         _ = Task.Run(async () =>
         {
             try
             {
-                await _patternPlayer.PlayAsync(_currentClip, PlayPatternEventAsync);
+                await _patternSetPlayer.PlayAsync(_patternSet, PlayPatternEventAsync);
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    SetStatus("Pattern playback finished.");
+                    SetStatus("Pattern set playback finished.");
                     return Task.CompletedTask;
                 });
             }
@@ -591,7 +602,7 @@ public partial class MainPage : ContentPage
 
     private void OnStopPatternClicked(object? sender, EventArgs e)
     {
-        _patternPlayer.Stop();
+        _patternSetPlayer.Stop();
         SetStatus("Pattern playback stopped.");
     }
 
@@ -603,9 +614,82 @@ public partial class MainPage : ContentPage
             RecordButton.Text = "Record";
         }
 
-        _currentClip.Clear();
+        _selectedTrack.Clip.Clear();
         UpdatePatternStatus();
-        SetStatus("Pattern cleared.");
+        SetStatus($"Cleared {_selectedTrack.Name}.");
+    }
+
+    private void OnAddTrackClicked(object? sender, EventArgs e)
+    {
+        var trackNumber = _patternSet.Tracks.Count + 1;
+        var name = $"Track {trackNumber}";
+        var newTrack = new PatternTrack { Name = name, Clip = new PatternClip { Name = name } };
+        _patternSet.AddTrack(newTrack);
+        RebuildTrackPicker();
+        SelectTrack(newTrack);
+        SetStatus($"Added {name}.");
+    }
+
+    private void OnRemoveTrackClicked(object? sender, EventArgs e)
+    {
+        if (_patternSet.Tracks.Count <= 1)
+        {
+            SetStatus("Can't remove the last track — clear it instead.");
+            return;
+        }
+
+        if (_patternRecorder.IsRecording)
+        {
+            _patternRecorder.Stop();
+            RecordButton.Text = "Record";
+        }
+
+        var removed = _patternSet.RemoveTrack(_selectedTrack);
+        if (!removed)
+        {
+            return;
+        }
+
+        var newSelection = _patternSet.Tracks[0];
+        RebuildTrackPicker();
+        SelectTrack(newSelection);
+        SetStatus($"Removed track; now editing {newSelection.Name}.");
+    }
+
+    private void OnTrackSelectionChanged(object? sender, EventArgs e)
+    {
+        if (TrackPicker.SelectedIndex < 0 || TrackPicker.SelectedIndex >= _patternSet.Tracks.Count)
+        {
+            return;
+        }
+
+        _selectedTrack = _patternSet.Tracks[TrackPicker.SelectedIndex];
+        UpdatePatternStatus();
+    }
+
+    private void RebuildTrackPicker()
+    {
+        TrackPicker.ItemsSource = _patternSet.Tracks.Select(t => t.Name).ToList();
+    }
+
+    private void SelectTrack(PatternTrack track)
+    {
+        var index = -1;
+        for (var i = 0; i < _patternSet.Tracks.Count; i++)
+        {
+            if (ReferenceEquals(_patternSet.Tracks[i], track))
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (index >= 0)
+        {
+            TrackPicker.SelectedIndex = index;
+            _selectedTrack = track;
+            UpdatePatternStatus();
+        }
     }
 
     private Task PlayPatternEventAsync(PatternEvent ev)
@@ -634,7 +718,8 @@ public partial class MainPage : ContentPage
 
     private void UpdatePatternStatus()
     {
-        PatternStatusLabel.Text = $"{_currentClip.Events.Count} events, length {_currentClip.LengthMs} ms";
+        var totalEvents = _patternSet.Tracks.Sum(t => t.Clip.Events.Count);
+        PatternStatusLabel.Text = $"{_selectedTrack.Name}: {_selectedTrack.Clip.Events.Count} events ({_selectedTrack.Clip.LengthMs} ms). Set total: {totalEvents} events across {_patternSet.Tracks.Count} track(s).";
     }
 
     private static string ToPatternVoiceId(string padId) => $"{PatternVoicePrefix}{padId}";

@@ -36,7 +36,13 @@ public static class MauiProgram
 			maxPolyphony: 8));
 		builder.Services.AddSingleton<IPatternRecorder, DefaultPatternRecorder>();
 		builder.Services.AddSingleton<IPatternPlayer, DefaultPatternPlayer>();
-		builder.Services.AddSingleton<PatternClip>(_ => new PatternClip { Name = "current" });
+		builder.Services.AddSingleton<IPatternSetPlayer, DefaultPatternSetPlayer>();
+		builder.Services.AddSingleton<PatternSet>(_ =>
+		{
+			var set = new PatternSet { Name = "session" };
+			set.AddTrack(new PatternTrack { Name = "Track 1", Clip = new PatternClip { Name = "Track 1" } });
+			return set;
+		});
 		builder.Services.AddSingleton<MainPage>();
 
 #if DEBUG
