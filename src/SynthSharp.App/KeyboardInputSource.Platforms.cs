@@ -122,6 +122,19 @@ public sealed partial class KeyboardInputSource
 #if WINDOWS
     private void OnNativeWindowKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs args)
     {
+        if (IsTextInputFocused(args.OriginalSource))
+        {
+            // Special-case: Escape releases focus so the user can play pads again without clicking.
+            if (args.Key == Windows.System.VirtualKey.Escape && sender is Microsoft.UI.Xaml.FrameworkElement root)
+            {
+                root.Focus(Microsoft.UI.Xaml.FocusState.Programmatic);
+                args.Handled = true;
+            }
+
+            // Don't raise — the text input owns this keystroke.
+            return;
+        }
+
         var token = ToToken(args.Key);
         if (token.Length > 0 && _heldKeys.Add(token))
         {
@@ -131,12 +144,35 @@ public sealed partial class KeyboardInputSource
 
     private void OnNativeWindowKeyUp(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs args)
     {
+        // Always attempt to remove from _heldKeys and raise KeyReleased, even when focus is on a text
+        // input. This handles the edge case where a key is pressed (pad voice starts), the user then
+        // clicks a TextBox (focus moves), and releases the key — without this the KeyDown suppression
+        // would leave the voice sustained indefinitely.
         var token = ToToken(args.Key);
         if (token.Length > 0 && _heldKeys.Remove(token))
         {
             RaiseKeyReleased(token);
         }
     }
+
+    /// <summary>Returns <see langword="true"/> when <paramref name="originalSource"/> is a control that accepts text input.</summary>
+    /// <remarks>
+    /// When the focused element is a text-input control, keystrokes should not trigger pad voices.
+    /// An editable <see cref="Microsoft.UI.Xaml.Controls.ComboBox"/> is included because it accepts
+    /// free-text entry; a non-editable ComboBox (used by the MAUI Picker) is excluded.
+    /// </remarks>
+    /// <param name="originalSource">The <see cref="Microsoft.UI.Xaml.Input.KeyRoutedEventArgs.OriginalSource"/> of the routed key event.</param>
+    private static bool IsTextInputFocused(object? originalSource) => originalSource switch
+    {
+        Microsoft.UI.Xaml.Controls.TextBox => true,
+        Microsoft.UI.Xaml.Controls.RichEditBox => true,
+        Microsoft.UI.Xaml.Controls.PasswordBox => true,
+        Microsoft.UI.Xaml.Controls.AutoSuggestBox => true,
+        // ComboBox in editable mode is also text-input-like. The MAUI Picker maps to a non-editable
+        // ComboBox, so this only fires when someone explicitly enables editing on a ComboBox.
+        Microsoft.UI.Xaml.Controls.ComboBox cb when cb.IsEditable => true,
+        _ => false,
+    };
 
     private static string ToToken(Windows.System.VirtualKey key)
     {
