@@ -2,6 +2,7 @@ using SynthSharp.Audio;
 using SynthSharp.Core.Audio;
 using SynthSharp.Core.Layout;
 using SynthSharp.Core.Music;
+using SynthSharp.Core.Patterns;
 using SynthSharp.Core.Persistence;
 using SynthSharp.Input;
 
@@ -11,11 +12,20 @@ public partial class MainPage : ContentPage
 {
     private const string KeyboardVoicePrefix = "key:";
     private const string PadVoicePrefix = "pad:";
+    private const string PatternVoicePrefix = "pattern:";
+
+    // Fixed hold-then-release for pattern playback since PatternEvent does not currently
+    // carry a duration. Long enough to sound on sustained voices, short enough not to
+    // overlap typical step patterns at 120 BPM (125 ms per sixteenth).
+    private static readonly TimeSpan PatternNoteHoldDuration = TimeSpan.FromMilliseconds(180);
 
     private readonly ISynthAudioEngine _audioEngine;
     private readonly IKeyboardInputSource _keyboardInputSource;
     private readonly PadTriggerRouter _padTriggerRouter;
     private readonly Dictionary<string, PadAssignment> _padsById;
+    private readonly IPatternRecorder _patternRecorder;
+    private readonly IPatternPlayer _patternPlayer;
+    private readonly PatternClip _currentClip;
 
     private KeyboardLayoutPreset _currentPreset;
 
@@ -23,13 +33,19 @@ public partial class MainPage : ContentPage
         ISynthAudioEngine audioEngine,
         IKeyboardInputSource keyboardInputSource,
         PadTriggerRouter padTriggerRouter,
-        KeyboardLayoutPreset preset)
+        KeyboardLayoutPreset preset,
+        IPatternRecorder patternRecorder,
+        IPatternPlayer patternPlayer,
+        PatternClip currentClip)
     {
         _audioEngine = audioEngine;
         _keyboardInputSource = keyboardInputSource;
         _padTriggerRouter = padTriggerRouter;
         _currentPreset = preset;
         _padsById = _currentPreset.Pads.ToDictionary(x => x.PadId, StringComparer.OrdinalIgnoreCase);
+        _patternRecorder = patternRecorder;
+        _patternPlayer = patternPlayer;
+        _currentClip = currentClip;
 
         InitializeComponent();
 
@@ -289,6 +305,13 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        // Capture into the pattern clip while recording — fires for keyboard input
+        // and the same hook below covers on-screen pad presses.
+        if (_patternRecorder.IsRecording)
+        {
+            _patternRecorder.Record(padId);
+        }
+
         _ = MainThread.InvokeOnMainThreadAsync(async () =>
         {
             SelectPad(padId);
@@ -396,6 +419,10 @@ public partial class MainPage : ContentPage
                 button.Pressed += async (_, _) =>
                 {
                     SelectPad(pad.PadId);
+                    if (_patternRecorder.IsRecording)
+                    {
+                        _patternRecorder.Record(pad.PadId);
+                    }
                     await StartPadVoiceAsync(pad, ToPadVoiceId(pad.PadId));
                 };
                 button.Released += (_, _) => _audioEngine.NoteOff(ToPadVoiceId(pad.PadId));
@@ -440,4 +467,116 @@ public partial class MainPage : ContentPage
     {
         StatusLabel.Text = message;
     }
+
+    // ---------------------------------------------------------------------------
+    // Pattern record / play handlers
+    // ---------------------------------------------------------------------------
+
+    private void OnRecordClicked(object? sender, EventArgs e)
+    {
+        if (_patternRecorder.IsRecording)
+        {
+            _patternRecorder.Stop();
+            RecordButton.Text = "Record";
+            SetStatus($"Stopped recording. Captured {_currentClip.Events.Count} events.");
+            UpdatePatternStatus();
+        }
+        else
+        {
+            _currentClip.Clear();
+            _patternRecorder.Start(_currentClip);
+            RecordButton.Text = "Stop recording";
+            UpdatePatternStatus();
+            SetStatus("Recording — press keys or pad buttons to capture events.");
+        }
+    }
+
+    private void OnPlayPatternClicked(object? sender, EventArgs e)
+    {
+        if (_currentClip.Events.Count == 0)
+        {
+            SetStatus("Pattern is empty — record something first.");
+            return;
+        }
+
+        if (_patternRecorder.IsRecording)
+        {
+            // Stop recording before playback so events don't interleave.
+            _patternRecorder.Stop();
+            RecordButton.Text = "Record";
+        }
+
+        SetStatus($"Playing pattern ({_currentClip.Events.Count} events).");
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _patternPlayer.PlayAsync(_currentClip, PlayPatternEventAsync);
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    SetStatus("Pattern playback finished.");
+                    return Task.CompletedTask;
+                });
+            }
+            catch (Exception ex)
+            {
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    SetStatus($"Pattern playback failed: {ex.Message}");
+                    return Task.CompletedTask;
+                });
+            }
+        });
+    }
+
+    private void OnStopPatternClicked(object? sender, EventArgs e)
+    {
+        _patternPlayer.Stop();
+        SetStatus("Pattern playback stopped.");
+    }
+
+    private void OnClearPatternClicked(object? sender, EventArgs e)
+    {
+        if (_patternRecorder.IsRecording)
+        {
+            _patternRecorder.Stop();
+            RecordButton.Text = "Record";
+        }
+
+        _currentClip.Clear();
+        UpdatePatternStatus();
+        SetStatus("Pattern cleared.");
+    }
+
+    private Task PlayPatternEventAsync(PatternEvent ev)
+    {
+        if (!_padsById.TryGetValue(ev.PadId, out var pad))
+        {
+            return Task.CompletedTask;
+        }
+
+        return MainThread.InvokeOnMainThreadAsync(async () =>
+        {
+            var voiceId = ToPatternVoiceId(ev.PadId);
+            SelectPad(ev.PadId);
+            try
+            {
+                await _audioEngine.NoteOnAsync(voiceId, pad);
+                await Task.Delay(PatternNoteHoldDuration);
+                _audioEngine.NoteOff(voiceId);
+            }
+            catch
+            {
+                // Best-effort playback inside the pattern loop — never abort the player on a single event failure.
+            }
+        });
+    }
+
+    private void UpdatePatternStatus()
+    {
+        PatternStatusLabel.Text = $"{_currentClip.Events.Count} events, length {_currentClip.LengthMs} ms";
+    }
+
+    private static string ToPatternVoiceId(string padId) => $"{PatternVoicePrefix}{padId}";
 }

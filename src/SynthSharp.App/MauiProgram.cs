@@ -2,6 +2,7 @@
 using Plugin.Maui.Audio;
 using SynthSharp.Audio;
 using SynthSharp.Core.Layout;
+using SynthSharp.Core.Patterns;
 using SynthSharp.Core.Persistence;
 using SynthSharp.Input;
 
@@ -33,6 +34,9 @@ public static class MauiProgram
 			sampleExporter: sp.GetRequiredService<ISampleExporter>(),
 			samplesDirectory: MainPage.GetSamplesDirectory(),
 			maxPolyphony: 8));
+		builder.Services.AddSingleton<IPatternRecorder, DefaultPatternRecorder>();
+		builder.Services.AddSingleton<IPatternPlayer, DefaultPatternPlayer>();
+		builder.Services.AddSingleton<PatternClip>(_ => new PatternClip { Name = "current" });
 		builder.Services.AddSingleton<MainPage>();
 
 #if DEBUG
