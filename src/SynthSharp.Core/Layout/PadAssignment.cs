@@ -36,4 +36,7 @@ public sealed class PadAssignment
 
     /// <summary>Per-pad filter; defaults to <see cref="FilterSettings.Off"/> which bypasses filtering.</summary>
     public FilterSettings Filter { get; set; } = FilterSettings.Off;
+
+    /// <summary>Per-pad LFO; defaults to <see cref="LfoSettings.Off"/> which bypasses modulation.</summary>
+    public LfoSettings Lfo { get; set; } = LfoSettings.Off;
 }

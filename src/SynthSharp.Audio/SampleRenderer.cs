@@ -12,8 +12,8 @@ public static class SampleRenderer
 {
     /// <summary>
     /// Returns a fresh PCM16 WAV <see cref="MemoryStream"/> containing the sample's audio
-    /// with gain, envelope, and optional filter applied. The output stream's position is at 0
-    /// and it is owned by the caller (the caller disposes).
+    /// with gain, envelope, optional filter, and optional LFO modulation applied. The output
+    /// stream's position is at 0 and it is owned by the caller (the caller disposes).
     /// </summary>
     /// <param name="sample">The sample to render.</param>
     /// <param name="gain">Linear multiplier applied to every sample value. 1.0 = unchanged.</param>
@@ -24,6 +24,13 @@ public static class SampleRenderer
     /// A separate filter instance is constructed per channel to prevent state cross-talk.
     /// Pass <see langword="null"/> or <see cref="FilterSettings.Off"/> for bypass.
     /// </param>
+    /// <param name="lfo">
+    /// Optional per-pad LFO applied during rendering. Supports <see cref="LfoTarget.Amplitude"/>
+    /// (tremolo) and <see cref="LfoTarget.FilterCutoff"/> modulation.
+    /// <see cref="LfoTarget.Pitch"/> is not supported for sample pads (resampling per chunk is
+    /// out of scope); when that target is set the LFO is silently bypassed.
+    /// Pass <see langword="null"/> or <see cref="LfoSettings.Off"/> for no modulation.
+    /// </param>
     /// <returns>A PCM16 WAV MemoryStream ready for <see cref="IAudioPlaybackBackend.PlayAsync"/>.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="sample"/> or <paramref name="exporter"/> is null.</exception>
     public static MemoryStream Render(
@@ -31,7 +38,8 @@ public static class SampleRenderer
         double gain,
         Envelope envelope,
         ISampleExporter exporter,
-        FilterSettings? filter = null)
+        FilterSettings? filter = null,
+        LfoSettings? lfo = null)
     {
         ArgumentNullException.ThrowIfNull(sample);
         ArgumentNullException.ThrowIfNull(exporter);
@@ -46,6 +54,13 @@ public static class SampleRenderer
         var sustainStart = attackSamples + decaySamples;
         var sustainEnd = Math.Max(sustainStart, frameCount - releaseSamples);
 
+        // Determine active LFO target; null, Target.None, and Target.Pitch all mean bypass.
+        // Pitch modulation requires per-sample resampling which is out of scope for sample pads.
+        var lfoTarget = lfo?.Target ?? LfoTarget.None;
+        var activeLfoTarget = lfoTarget is LfoTarget.Amplitude or LfoTarget.FilterCutoff
+            ? lfoTarget
+            : LfoTarget.None;
+
         var shaped = new float[channelCount][];
         for (var c = 0; c < channelCount; c++)
         {
@@ -59,6 +74,30 @@ public static class SampleRenderer
             {
                 var amp = EnvelopeAmplitude(i, attackSamples, decaySamples, sustainStart, sustainEnd, releaseSamples, envelope.SustainLevel);
                 var enveloped = (float)(sample.Channels[c][i] * amp * gain);
+
+                // Amplitude modulation (tremolo): multiply by (1 + lfoValue), clamped to non-negative.
+                if (activeLfoTarget == LfoTarget.Amplitude)
+                {
+                    var timeSeconds = i / (double)sampleRate;
+                    var lfoValue = Lfo.EvaluateSine(lfo!.RateHz, timeSeconds, lfo.Depth);
+                    var ampMod = (float)Math.Max(0d, 1d + lfoValue);
+                    enveloped *= ampMod;
+                }
+
+                // Filter cutoff modulation: recreate the filter every 256 samples (~5.8 ms at 44.1 kHz).
+                // IIR state is lost on each recreation; accepted quality compromise for simplicity.
+                // Only active when both filter and LFO are configured.
+                if (activeLfoTarget == LfoTarget.FilterCutoff && filter is not null && filter.Type != FilterType.None)
+                {
+                    if (i % 256 == 0)
+                    {
+                        var timeSeconds = i / (double)sampleRate;
+                        var lfoValue = Lfo.EvaluateSine(lfo!.RateHz, timeSeconds, lfo.Depth);
+                        var modCutoff = filter.CutoffHz * (1 + lfoValue * 0.5);
+                        biquad = AudioFilters.Create(filter with { CutoffHz = modCutoff }, sampleRate);
+                    }
+                }
+
                 shaped[c][i] = biquad is not null ? biquad.Process(enveloped) : enveloped;
             }
         }
