@@ -254,15 +254,27 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Wait for NuGet propagation
-        shell: bash
-        run: sleep 60
-
-      - name: Install SynthSharp.Tool
+      - name: Install SynthSharp.Tool (poll for NuGet indexing)
         shell: bash
         run: |
-          dotnet tool install --global SynthSharp.Tool --version ${{ needs.prepare.outputs.version }} --add-source https://api.nuget.org/v3/index.json
-          echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+          # NuGet v3 indexing for tool packages can take 5-30 min after push.
+          # Poll up to 20 attempts at 30s each (10 min total) before giving up.
+          version="${{ needs.prepare.outputs.version }}"
+          attempts=20
+          for i in $(seq 1 $attempts); do
+            echo "Attempt $i/$attempts: installing SynthSharp.Tool $version..."
+            if dotnet tool install --global SynthSharp.Tool --version "$version" --add-source https://api.nuget.org/v3/index.json; then
+              echo "Installed on attempt $i."
+              echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+              exit 0
+            fi
+            if [ "$i" -lt "$attempts" ]; then
+              echo "Not indexed yet; waiting 30s..."
+              sleep 30
+            fi
+          done
+          echo "::error::SynthSharp.Tool $version was not installable after $((attempts * 30))s of polling. NuGet indexing may be unusually slow today."
+          exit 1
 
       - name: Run tool to render a tone
         shell: bash
