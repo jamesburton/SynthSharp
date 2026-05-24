@@ -50,3 +50,18 @@ bit-identical output across repeated invocations.
 CI run on a different platform produces drift, the FFT inside NWaves is
 platform-non-deterministic — revert that one golden and document the platform
 boundary.
+
+## Sample-aware goldens
+
+`SampleAwareRegressionTests` pins SampleRenderer behaviour against a small
+instrument-like fixture (a synthetic plucked sawtooth with envelope decay and
+low-pass filter). The fixture lives under `Fixtures/` and is regenerated on
+demand by `InstrumentFixtureFactory` — see `Fixtures/README.md`.
+
+These goldens catch regressions that the synthetic-ramp goldens miss: real
+sample shapes have transients, envelope decays, and harmonic content that
+exercise different code paths in the renderer (filter state convergence,
+envelope interaction with non-DC source, etc.).
+
+5 sample-aware tests cover raw playback, gain, filter, trim, and loop against
+the fixture.
