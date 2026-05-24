@@ -25,7 +25,11 @@ public static class MauiProgram
 		builder.Services.AddSingleton(DefaultPresetFactory.CreateFourRowDefault());
 		builder.Services.AddSingleton<PadTriggerRouter>(sp => new PadTriggerRouter(sp.GetRequiredService<KeyboardLayoutPreset>().Pads));
 		builder.Services.AddSingleton<IKeyboardInputSource, KeyboardInputSource>();
+#if WINDOWS
+		builder.Services.AddSingleton<IAudioPlaybackBackend, WasapiAudioPlaybackBackend>();
+#else
 		builder.Services.AddSingleton<IAudioPlaybackBackend, MauiAudioPlaybackBackend>();
+#endif
 		builder.Services.AddSingleton<ISampleImporter, WavSampleImporter>();
 		builder.Services.AddSingleton<ISampleExporter, WavSampleExporter>();
 		builder.Services.AddSingleton<ISynthAudioEngine>(sp => new SynthAudioEngine(

@@ -71,6 +71,10 @@
 		<PackageReference Include="Plugin.Maui.Audio" Version="4.0.0" />
 	</ItemGroup>
 
+	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
+		<PackageReference Include="NAudio" Version="2.3.0" />
+	</ItemGroup>
+
 	<ItemGroup>
 	  <ProjectReference Include="..\SynthSharp.Core\SynthSharp.Core.csproj" />
 	  <ProjectReference Include="..\SynthSharp.Audio\SynthSharp.Audio.csproj" />
